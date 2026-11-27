@@ -83,11 +83,13 @@ async function start() {
 
 async function makeDetector() {
   const fileset = await FilesetResolver.forVisionTasks('/web/vendor/tasks-vision/wasm');
-  const make = (delegate) => ObjectDetector.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: '/web/models/efficientdet_lite0.tflite', delegate },
+  // CPU only: with this int8 model the GPU delegate loads without error but
+  // returns no detections at all (seen on Windows/Chrome: person 0.95 on CPU,
+  // nothing on GPU for the same photo). The int8 model is small, CPU is fast enough.
+  return ObjectDetector.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: '/web/models/efficientdet_lite0.tflite', delegate: 'CPU' },
     runningMode: 'VIDEO', categoryAllowlist: ['person'], scoreThreshold: 0.5, maxResults: 20,
   });
-  try { return await make('GPU'); } catch (e) { return await make('CPU'); }
 }
 
 function detectLoop(detector) {
