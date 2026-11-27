@@ -103,4 +103,6 @@ Resource budget and board limits: [docs/BOARD_BUDGET.md](docs/BOARD_BUDGET.md).
 
 See [docs/INTEGRATION.md](docs/INTEGRATION.md). Status: the core is tested on the
 host. The board port is a template that has **not been built against the PSOC Edge
-SDK yet**. That's the next step, in Live Lab's Developer Workspace.
+SDK yet**, and nothing has been run on the board. The Live Lab sessions were
+cancelled; the current way to run the project is the
+[webcam demo](docs/WEBCAM_DEMO_RU.md) above.
