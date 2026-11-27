@@ -35,6 +35,11 @@ USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
 | `bridge/receiver.py` | Receiver: saves data to a file, live page |
 | `tools/apply_to_example.sh` | Integrates everything into the Infineon example with one command |
 | `host/sim_main.c` | Runs the same core on a laptop |
+| `host/cam_main.c` | `cp_cam`: the same core fed by `DET`/`AUD`/`TICK` lines on stdin (webcam demo) |
+| `server/server.js` | Node server: one `cp_cam` per room, `/api/frame`, `/api/rooms`, serves `web/` |
+| `web/sensor.html`, `web/sensor.js` | Browser sensor: MediaPipe person detector + YAMNet voice, sends numbers only |
+| `web/dashboard.html` | Room dashboard (occupied / empty timer / noise / voice) |
+| `tools/fetch_models.sh` | One-time download of the MediaPipe bundles and `.tflite` models into `web/` |
 | `tests/test_main.c` | Unit tests |
 
 Design rules:
@@ -51,6 +56,21 @@ make test                      # unit tests (ASan + UBSan)
 make sim                       # interactive: type SIM 1, SIM 0, STATUS, HELP
 ./build/cp_sim --demo --speed 10   # scripted ghost-booking scenario
 ```
+
+## Webcam demo (no board)
+
+The Infineon Live Lab sessions did not happen, so the demo runs on a laptop: the
+webcam and microphone stand in for the board, the browser runs the models locally
+(only numbers leave the page), and the same C core (`cp_cam`) keeps the occupancy
+timer. Step-by-step guide for Windows, in Russian: [docs/WEBCAM_DEMO_RU.md](docs/WEBCAM_DEMO_RU.md).
+
+```bash
+make cam CC=gcc                 # build/cp_cam
+bash tools/fetch_models.sh      # once, needs internet (~30 MB)
+node server/server.js           # then open http://localhost:8080/sensor and http://localhost:8080/
+```
+
+This is a laptop stand-in: nothing here has been run on the board.
 
 ## Where the data goes (bridge + receiver)
 

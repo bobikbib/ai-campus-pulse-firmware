@@ -37,6 +37,7 @@
 | Stack | deepest path ≈ 1.8 KB (including libc `snprintf`) out of 4 KB | ~2× margin; the board reports the real number in a `diag` line |
 | CPU | 1 tick per 50 ms, a few hundred instructions; inference hook = 2 stores | well under 0.1% of the M55 |
 | UART | ~230 B / 5 s + one line per change | < 1% of 115200 baud |
+| Line buffer / audio | `CP_LINE_MAX` raised 256 to 320 (+64 B stack in the report/ack/error paths; worst-case status line is about 250 chars). Audio state is about 25 B of static RAM. Not re-measured on the board | negligible |
 
 Decisions we made because of the constraints:
 - **The mask counter is off on the board** (`CP_ENABLE_MASK_COUNTER=0`). Otherwise

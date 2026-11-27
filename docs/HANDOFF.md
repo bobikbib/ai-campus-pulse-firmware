@@ -1,4 +1,16 @@
-# Handoff: state of the project (2026-11-27, before the 20:00 Live Lab sessions)
+# Handoff: state of the project (2026-11-27)
+
+## 0. Current direction (read first)
+
+The Infineon Live Lab sessions **were cancelled and will not happen**. The team now
+demos with a **laptop webcam + microphone**. The board's C core runs on the laptop
+(`build/cp_cam`), a Node server (`server/server.js`) feeds it, a browser page
+(`web/sensor.html`) runs MediaPipe EfficientDet-Lite0 int8 (people) and YAMNet (voice)
+locally, and a dashboard (`web/dashboard.html`) shows the rooms. Guide for the team:
+[WEBCAM_DEMO_RU.md](WEBCAM_DEMO_RU.md). Later the board keeps YOLACT
+(`aihub-deploy-vision`) for counting, and its microphones are meant to feed
+`cp_app_on_audio()`; none of that is done or verified on the board. Sections 3, 6 and 8
+below describe the cancelled Live Lab plan and are kept as history.
 
 ## 1. The project in one paragraph
 
@@ -23,16 +35,29 @@ absence timer runs → booking is auto-released → someone else can book it.
 | `port/pse84/cp_port_pse84.c` + `cp_port.h`: FreeRTOS glue | Written for the Infineon example; **compiles for Cortex-M55 against stub headers only, never built with the real SDK** |
 | `tools/apply_to_example.sh`: patches the Infineon example | **Tested on local copies** of both examples (7 scenarios). Not yet run in Live Lab |
 | `bridge/cp_bridge.py` + `bridge/receiver.py`: data path | **Tested end to end** with the simulator (10/10 delivered, retry works) |
-| Reading `CP>` lines **from the Live Lab web page** to the bridge | **NOT BUILT.** See §6 |
+| Reading `CP>` lines **from the Live Lab web page** to the bridge | **NOT BUILT.** Moot: Live Lab sessions cancelled. See §6 |
+| Core audio: `cp_app_on_audio()`, `noise_db`/`voice` in the protocol | **Done, tests pass** (host). Not wired to board microphones |
+| `host/cam_main.c` → `build/cp_cam` | **Smoke-tested on Windows** (`make cam CC=gcc`) |
+| `server/server.js` | **Done, 7 Node tests pass** (`node --test server/test.js`) |
+| `web/sensor.html` + `sensor.js` | Models load and run in the browser (**verified by the controller**). **Real webcam/microphone capture NOT yet verified** |
+| `web/dashboard.html` | **Rendered and verified with simulated frames.** Not yet seen with a live sensor |
+| `tools/fetch_models.sh` | Written; downloads the bundles and two models into `web/` (git-ignored) |
 
 Output format (one line per message on the UART):
 ```
 CP>{"v":1,"type":"presence","room":"ROOM-101","people_count":1,"occupied":true,"empty_for_s":0,"sensor":"ok","mode":"camera","reason":"change","uptime_s":120,"frames":2400}
 ```
+Presence lines also carry `"noise_db"` (relative level 0..120, not calibrated dB) and
+`"voice"` (speech heard), both `null` when there is no recent microphone reading;
+they never affect `occupied` / `empty_for_s`. `reason` can also be `"audio"` (a voice
+change was reported, at most once per second). Example:
+```
+CP>{"v":1,"type":"presence","room":"A-101","people_count":1,"occupied":true,"empty_for_s":0,"sensor":"ok","mode":"camera","reason":"change","uptime_s":120,"frames":2400,"noise_db":47,"voice":false}
+```
 Other types: `hello` (boot), `ack`, `error`, `help`, `diag` (`stack_free_bytes`).
 Spec: `src/core/protocol.h`. Rules the website should follow: §7.
 
-## 3. Infineon Live Lab: what we saw (verified 2026-11-27)
+## 3. Infineon Live Lab: what we saw (verified 2026-11-27; sessions since cancelled)
 
 URL: https://infineon-live-lab.tenxerlabs.com/app/psoc-edge-e84 (the user signs in).
 
@@ -121,7 +146,7 @@ During an active booking:
 The board doesn't know about bookings. The 45-minute rule lives on the server.
 `bridge/receiver.py` only stores and displays data. It has no booking logic yet.
 
-## 8. Tonight's sessions
+## 8. Tonight's sessions (CANCELLED, history only)
 
 - **Session 1 (reconnaissance):** [SESSION1_CHECKLIST.md](SESSION1_CHECKLIST.md).
   Clone, build the *unmodified* example, flash, check the camera, run `--debug` to verify
