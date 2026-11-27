@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Датчик комнаты — Campus Pulse</title>
+<style>
+  :root { --bg:#f6f7f9; --fg:#1b1f24; --card:#fff; --muted:#5b6570; --line:#d8dde3; --accent:#0b6bcb; --bad:#c0392b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --fg:#e8eaed; --card:#1d2125; --muted:#9aa4af; --line:#2f353b; --accent:#5aa9ff; --bad:#ff6b5e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:720px; margin:0 auto; }
+  h1 { font-size:1.3rem; margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:12px 0; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input { font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:10em; }
+  button { font:inherit; padding:8px 18px; border:0; border-radius:6px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .stage { position:relative; width:100%; max-width:640px; aspect-ratio:4/3; background:#000; border-radius:8px; overflow:hidden; }
+  .stage video, .stage canvas { position:absolute; inset:0; width:100%; height:100%; }
+  .note { color:var(--muted); font-size:.9rem; }
+  .big { font-size:2rem; font-weight:700; }
+  .err { color:var(--bad); font-weight:600; }
+  pre { margin:0; padding:8px; background:var(--bg); border-radius:6px; overflow-x:auto; font-size:.9rem; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Датчик комнаты (камера + микрофон)</h1>
+  <p class="note">Видео и звук обрабатываются на этом компьютере и никуда не отправляются. Наружу уходят только числа.</p>
+
+  <div id="insecure" class="card err" hidden>
+    Камера недоступна на этой странице. Откройте <b>http://localhost:8080/sensor</b> (именно localhost, не IP-адрес).
+  </div>
+
+  <div class="card row">
+    <label>Комната <input id="room" value="A-101" maxlength="23" autocomplete="off"></label>
+    <button id="start">Старт</button>
+    <span id="status" class="note">Нажмите «Старт» и разрешите доступ к камере и микрофону.</span>
+  </div>
+
+  <div class="stage"><video id="video" muted playsinline></video><canvas id="overlay"></canvas></div>
+
+  <div class="card">
+    <div class="row" style="gap:24px">
+      <div>Людей<div class="big" id="people">–</div></div>
+      <div>Шум<div class="big" id="noise">–</div><div class="note">относительный уровень, не калиброван</div></div>
+      <div>Речь<div class="big" id="voice">–</div></div>
+    </div>
+    <p id="micmsg" class="note"></p>
+    <p id="srvmsg" class="err"></p>
+  </div>
+
+  <div class="card">
+    <div class="note">Отправляется на сервер каждые 200 мс (POST /api/frame):</div>
+    <pre id="json">{}</pre>
+  </div>
+  <p class="note"><button id="opendash" type="button">Открыть панель комнат в отдельном окне</button><br>
+  Разместите окно панели рядом с этим окном, не поверх него: браузер приостанавливает скрытую или свёрнутую страницу датчика, и данные перестанут отправляться.</p>
+</main>
+<script type="module" src="/web/sensor.js"></script>
+</body>
+</html>

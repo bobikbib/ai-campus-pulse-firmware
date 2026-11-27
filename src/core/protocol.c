@@ -155,15 +155,22 @@ void cp_parse_command(const char *line, cp_cmd_t *out)
 
 int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m)
 {
+    char noise[8] = "null";
+    if (m->has_audio) {
+        snprintf(noise, sizeof noise, "%u", (unsigned)m->noise_db);
+    }
+    const char *voice = m->has_audio ? (m->voice ? "true" : "false") : "null";
     const int n = snprintf(buf, len,
         CP_LINE_PREFIX "{\"v\":%d,\"type\":\"presence\",\"room\":\"%s\","
         "\"people_count\":%u,\"occupied\":%s,\"empty_for_s\":%lu,"
         "\"sensor\":\"%s\",\"mode\":\"%s\",\"reason\":\"%s\","
-        "\"uptime_s\":%lu,\"frames\":%lu}",
+        "\"uptime_s\":%lu,\"frames\":%lu,"
+        "\"noise_db\":%s,\"voice\":%s}",
         CP_PROTOCOL_VERSION, m->room, (unsigned)m->people_count,
         m->occupied ? "true" : "false", (unsigned long)m->empty_for_s,
         m->sensor, m->mode, m->reason,
-        (unsigned long)m->uptime_s, (unsigned long)m->frames);
+        (unsigned long)m->uptime_s, (unsigned long)m->frames,
+        noise, voice);
     return finish(n, len);
 }
 

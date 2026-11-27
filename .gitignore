@@ -3,3 +3,6 @@ build/
 .playwright-mcp/
 data/
 __pycache__/
+.superpowers/
+web/vendor/
+web/models/

@@ -2,9 +2,11 @@
 #include "../src/core/person_counter.h"
 #include "../src/core/presence.h"
 #include "../src/core/protocol.h"
+#include "../src/core/cp_config.h"
 #include "../src/app/cp_app.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_fail, g_pass;
@@ -161,7 +163,7 @@ static void test_protocol(void)
     cp_parse_command("FOO", &c);            CHECK(c.type == CP_CMD_INVALID);
 
     char buf[256];
-    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60 };
+    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false };
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
     CHECK(strncmp(buf, "CP>{", 4) == 0);
     CHECK(strstr(buf, "\"people_count\":2") != NULL);
@@ -171,7 +173,7 @@ static void test_protocol(void)
 
 /* ---------- app (end to end, simulated clock) ---------- */
 
-static char g_last[256];
+static char g_last[512];
 static int  g_lines;
 static void capture(const char *l) { strncpy(g_last, l, sizeof g_last - 1); g_lines++; }
 
@@ -211,6 +213,104 @@ static void test_app_sim_flow(void)
 #endif
 }
 
+/* ---------- audio (noise level + voice; never affects presence) ---------- */
+
+static void test_audio(void)
+{
+    const cp_platform_t plat = { capture };
+    uint32_t t = 0;
+    cp_app_init(&plat, false, t);
+    /* No microphone reading yet -> null, not 0. */
+    CHECK(strstr(g_last, "\"noise_db\":null,\"voice\":null") != NULL);
+
+    /* First reading with voice -> reported right away. */
+    t = 2000;
+    int lines = g_lines;
+    cp_app_on_audio(41, true, t);
+    CHECK(g_lines == lines + 1);
+    CHECK(strstr(g_last, "\"noise_db\":41,\"voice\":true") != NULL);
+    CHECK(strstr(g_last, "\"reason\":\"audio\"") != NULL);
+
+    /* Voice flicker inside 1 s -> no flood; one report once 1 s has passed. */
+    lines = g_lines;
+    cp_app_on_audio(41, false, t += 100);
+    cp_app_on_audio(42, true, t += 100);
+    cp_app_on_audio(43, false, t += 100);
+    cp_app_tick(t += 100);
+    CHECK(g_lines == lines);
+    cp_app_tick(t = 2000 + CP_AUDIO_REPORT_MIN_MS);
+    CHECK(g_lines == lines + 1);
+    CHECK(strstr(g_last, "\"noise_db\":43,\"voice\":false") != NULL);
+
+    /* Loud voices with an empty camera view never make the room occupied. */
+    for (int i = 0; i < 20; i++) {
+        cp_app_on_detection(0, t += 200);
+        cp_app_on_audio(90, true, t);
+    }
+    CHECK(!cp_app_occupied());
+
+    /* Clamped to 0..120. */
+    cp_app_on_audio(200, true, t += 100);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"noise_db\":120") != NULL);
+
+    /* Microphone stops -> back to null after CP_STALE_MS. */
+    t += CP_STALE_MS + 100;
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"noise_db\":null,\"voice\":null") != NULL);
+
+    /* Longest possible status line still fits in CP_LINE_MAX. */
+    char buf[CP_LINE_MAX];
+    cp_status_msg_t m = { "AAAAAAAAAAAAAAAAAAAAAAA", "heartbeat", "camera", "starting",
+                          999, true, UINT32_MAX, UINT32_MAX, UINT32_MAX,
+                          true, 120, false };
+    CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
+}
+
+/* Audio must not touch the empty timer: run the same scenario with and
+ * without loud speech and compare occupancy and empty_for_s. */
+static long status_empty_for_s(uint32_t t)
+{
+    cp_app_on_line("STATUS", t);
+    const char *k = strstr(g_last, "\"empty_for_s\":");
+    return k ? strtol(k + 14, NULL, 10) : -1;
+}
+
+static void run_empty_scenario(bool with_audio, long *empty_s, bool *occ_in_hold, bool *occ_after_hold)
+{
+    const cp_platform_t plat = { capture };
+    uint32_t t = 0;
+    cp_app_init(&plat, false, t);
+    for (unsigned i = 0; i < CP_ENTER_FRAMES + 2; i++) cp_app_on_detection(1, t += 200);
+    CHECK(cp_app_occupied());
+    const uint32_t empty_start = t;
+    *occ_in_hold = true;
+    while (t < empty_start + CP_EMPTY_HOLD_MS - 400) {
+        cp_app_on_detection(0, t += 200);
+        if (with_audio) cp_app_on_audio(90, true, t);
+        cp_app_tick(t);
+        if (!cp_app_occupied()) *occ_in_hold = false;
+    }
+    while (t < empty_start + CP_EMPTY_HOLD_MS + 4000) {
+        cp_app_on_detection(0, t += 200);
+        if (with_audio) cp_app_on_audio(90, true, t);
+        cp_app_tick(t);
+    }
+    *occ_after_hold = cp_app_occupied();
+    *empty_s = status_empty_for_s(t);
+}
+
+static void test_audio_never_changes_empty_timer(void)
+{
+    long e0, e1; bool b0, b1, a0, a1;
+    run_empty_scenario(false, &e0, &b0, &a0);
+    run_empty_scenario(true, &e1, &b1, &a1);
+    CHECK(b0 && b1);     /* still occupied inside the hold window */
+    CHECK(!a0 && !a1);   /* released after CP_EMPTY_HOLD_MS, audio or not */
+    CHECK(e0 > 0);       /* timer is running */
+    CHECK(e1 == e0);     /* identical with loud speech */
+}
+
 int main(void)
 {
     test_counter();
@@ -219,6 +319,8 @@ int main(void)
     test_wraparound();
     test_protocol();
     test_app_sim_flow();
+    test_audio();
+    test_audio_never_changes_empty_timer();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

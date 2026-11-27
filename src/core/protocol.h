@@ -6,7 +6,12 @@
  *
  *   CP>{"v":1,"type":"presence","room":"ROOM-101","people_count":0,
  *       "occupied":false,"empty_for_s":63,"sensor":"ok","mode":"camera",
- *       "reason":"heartbeat","uptime_s":120,"frames":2400}
+ *       "reason":"heartbeat","uptime_s":120,"frames":2400,
+ *       "noise_db":41,"voice":true}
+ *
+ * noise_db (relative level 0..120) and voice (speech heard) are informational
+ * only and never affect occupied/empty_for_s. Both are null when there is no
+ * recent microphone reading. reason "audio" = a voice change was reported.
  *
  * Host -> board: one text command per line:
  *   STATUS                 force a status line now
@@ -52,7 +57,7 @@ void cp_parse_command(const char *line, cp_cmd_t *out);
 
 typedef struct {
     const char *room;
-    const char *reason;      /* "heartbeat", "change", "status", "boot" */
+    const char *reason;      /* "heartbeat", "change", "status", "boot", "audio" */
     const char *mode;        /* "camera" or "sim" */
     const char *sensor;
     uint16_t    people_count;
@@ -60,6 +65,9 @@ typedef struct {
     uint32_t    empty_for_s;
     uint32_t    uptime_s;
     uint32_t    frames;
+    bool        has_audio;   /* false -> noise_db/voice are sent as null */
+    uint8_t     noise_db;    /* relative level 0..120 */
+    bool        voice;
 } cp_status_msg_t;
 
 /* Format helpers. Return bytes written (excluding NUL), or -1 if truncated. */

@@ -51,6 +51,11 @@
 #define CP_MAX_LABELS          256u
 #endif
 
-#define CP_LINE_MAX            256
+/* Min gap between audio-triggered reports (voice flicker must not flood). */
+#ifndef CP_AUDIO_REPORT_MIN_MS
+#define CP_AUDIO_REPORT_MIN_MS 1000u
+#endif
+
+#define CP_LINE_MAX            320
 
 #endif /* CP_CONFIG_H */
