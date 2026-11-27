@@ -3,3 +3,4 @@ build/
 .playwright-mcp/
 data/
 __pycache__/
+.superpowers/
