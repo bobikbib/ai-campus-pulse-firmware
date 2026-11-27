@@ -31,6 +31,8 @@ USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
 | `src/core/protocol.c` | JSON-lines output, command parser |
 | `src/app/cp_app.c` | Ties it together; camera **or** simulation mode |
 | `port/pse84/cp_port_pse84.c` | FreeRTOS glue for the board (static task, no heap) |
+| `bridge/cp_bridge.py` | Board → HTTP: forwards `CP>` lines |
+| `bridge/receiver.py` | Receiver: saves data to a file, live page |
 | `tools/apply_to_example.sh` | Integrates everything into the Infineon example with one command |
 | `host/sim_main.c` | Runs the same core on a laptop |
 | `tests/test_main.c` | Unit tests |
@@ -49,6 +51,20 @@ make test                      # unit tests (ASan + UBSan)
 make sim                       # interactive: type SIM 1, SIM 0, STATUS, HELP
 ./build/cp_sim --demo --speed 10   # scripted ghost-booking scenario
 ```
+
+## Where the data goes (bridge + receiver)
+
+```bash
+# terminal 1: receiver. Saves everything to data/readings.jsonl, page at http://localhost:8080
+python3 bridge/receiver.py
+
+# terminal 2: data source -> bridge -> receiver
+./build/cp_sim --speed 60 | python3 bridge/cp_bridge.py --url http://localhost:8080/api/sensor
+```
+
+Standard library only. Instead of the simulator you can pipe in any stream of
+`CP>` lines (the board's serial port, the Live Lab console). The bridge sends
+every message in order. If the receiver is down, it waits and resends.
 
 ## Commands (UART / stdin)
 
