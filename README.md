@@ -1,0 +1,67 @@
+# AI Campus Pulse — Firmware
+
+Occupancy sensing for **AI Campus Pulse** (Ghost Booking Killer), in C for the
+Infineon **PSOC™ Edge E84** (KIT_PSE84_EVAL).
+
+The camera and the AI model run **on the board**. Images never leave the device.
+Only this goes out:
+
+```json
+{"v":1,"type":"presence","room":"A-101","people_count":1,"occupied":true,
+ "empty_for_s":0,"sensor":"ok","mode":"camera","reason":"change","uptime_s":120,"frames":2400}
+```
+
+## How it works
+
+```
+USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
+                                            │
+                          person_counter.c  ▼  (connected blobs → people)
+                                  presence.c   (debounce, empty timer, sensor health)
+                                            │
+                                 protocol.c ▼  "CP>{json}" over UART
+                                            │
+                     bridge ─► website ─► 45-min rule releases ghost bookings
+```
+
+| File | Role |
+|------|------|
+| `src/core/person_counter.c` | Counts people in a segmentation mask (two-pass union-find, no malloc) |
+| `src/core/presence.c` | Stable `occupied`, `empty_for_s`, camera health (`ok`/`stale`) |
+| `src/core/protocol.c` | JSON-lines output, command parser |
+| `src/app/cp_app.c` | Ties it together; camera **or** simulation mode |
+| `port/pse84/cp_port_pse84.c` | FreeRTOS glue for the board (template) |
+| `host/sim_main.c` | Runs the same core on a laptop |
+| `tests/test_main.c` | Unit tests |
+
+Design rules:
+- **One false detection doesn't reset the absence timer.** Presence needs
+  `CP_ENTER_FRAMES` frames in a row.
+- **A dead camera is not an empty room.** When frames stop, `sensor` becomes
+  `stale`, `empty_for_s` goes to 0, and the room is never marked vacant.
+- **The board doesn't know bookings.** The 45-minute release happens on the server.
+
+## Quick start (laptop, no hardware)
+
+```bash
+make test                      # unit tests (ASan + UBSan)
+make sim                       # interactive: type SIM 1, SIM 0, STATUS, HELP
+./build/cp_sim --demo --speed 10   # scripted ghost-booking scenario
+```
+
+## Commands (UART / stdin)
+
+| Command | Effect |
+|---------|--------|
+| `STATUS` | print status now |
+| `ROOM A-101` | set room id |
+| `MODE SIM` / `MODE CAM` | simulation ↔ real camera |
+| `SIM 2` | simulated people count |
+| `CFG HOLD 10000` | ms of emptiness before `occupied:false` |
+| `CFG ENTER 3` | frames needed to confirm presence |
+
+## On the board
+
+See [docs/INTEGRATION.md](docs/INTEGRATION.md). Status: the core is tested on the
+host. The board port is a template that has **not been built against the PSOC Edge
+SDK yet**. That's the next step, in Live Lab's Developer Workspace.
