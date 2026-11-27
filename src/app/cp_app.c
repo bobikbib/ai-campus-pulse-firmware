@@ -16,7 +16,30 @@ static struct {
     uint32_t       last_report_ms;
     uint32_t       last_sim_frame_ms;
     bool           pending_change;
+    bool           has_audio;
+    uint8_t        noise_db;
+    bool           voice;
+    uint32_t       audio_ms;       /* time of last microphone reading */
+    uint8_t        audio_reported; /* audio_state() sent in the last report */
 } g;
+
+#define CP_AUDIO_NONE 0u
+#define CP_AUDIO_QUIET 1u
+#define CP_AUDIO_VOICE 2u
+
+/* Audio is absent before the first reading and once it goes stale. */
+static bool audio_fresh(uint32_t now_ms)
+{
+    return g.has_audio && (now_ms - g.audio_ms) <= CP_STALE_MS;
+}
+
+static uint8_t audio_state(uint32_t now_ms)
+{
+    if (!audio_fresh(now_ms)) {
+        return CP_AUDIO_NONE;
+    }
+    return g.voice ? CP_AUDIO_VOICE : CP_AUDIO_QUIET;
+}
 
 #if CP_ENABLE_MASK_COUNTER
 static uint16_t g_labels[CP_MASK_MAX_PIXELS];
@@ -42,10 +65,14 @@ static void report(const char *reason, uint32_t now_ms)
         .empty_for_s  = cp_presence_empty_for_s(&g.presence, now_ms),
         .uptime_s     = (now_ms - g.boot_ms) / 1000u,
         .frames       = g.presence.frames_total,
+        .has_audio    = audio_fresh(now_ms),
+        .noise_db     = g.noise_db,
+        .voice        = g.voice,
     };
     if (cp_format_status(buf, sizeof buf, &m) > 0) {
         emit(buf);
     }
+    g.audio_reported = audio_state(now_ms);
     g.last_report_ms = now_ms;
     g.pending_change = false;
 }
@@ -109,6 +136,25 @@ void cp_app_on_detection(uint16_t people, uint32_t now_ms)
         return; /* camera frames are ignored while simulating */
     }
     handle_events(cp_presence_on_frame(&g.presence, people, now_ms), now_ms);
+}
+
+/* True when a voice change is waiting and the rate limit has passed. */
+static bool audio_report_due(uint32_t now_ms)
+{
+    const uint8_t s = audio_state(now_ms);
+    return s != CP_AUDIO_NONE && s != g.audio_reported &&
+           (now_ms - g.last_report_ms) >= CP_AUDIO_REPORT_MIN_MS;
+}
+
+void cp_app_on_audio(uint8_t noise_db, bool voice, uint32_t now_ms)
+{
+    g.has_audio = true;
+    g.noise_db = noise_db > 120u ? 120u : noise_db;
+    g.voice = voice;
+    g.audio_ms = now_ms;
+    if (audio_report_due(now_ms)) {
+        report("audio", now_ms);
+    }
 }
 
 #if CP_ENABLE_MASK_COUNTER
@@ -191,6 +237,8 @@ void cp_app_tick(uint32_t now_ms)
 
     if ((now_ms - g.last_report_ms) >= CP_HEARTBEAT_MS) {
         report(g.pending_change ? "change" : "heartbeat", now_ms);
+    } else if (audio_report_due(now_ms)) {
+        report("audio", now_ms);
     }
 }
 

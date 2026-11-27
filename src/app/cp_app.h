@@ -49,6 +49,11 @@ void cp_app_on_detection(uint16_t people, uint32_t now_ms);
 void cp_app_on_mask(const uint8_t *mask, uint16_t width, uint16_t height, uint32_t now_ms);
 #endif
 
+/* Microphone path: relative noise level (clamped to 0..120) and whether
+ * speech is currently heard. Informational only: never changes occupancy.
+ * A voice change is reported at most once per CP_AUDIO_REPORT_MIN_MS. */
+void cp_app_on_audio(uint8_t noise_db, bool voice, uint32_t now_ms);
+
 /* One received command line from UART / stdin. */
 void cp_app_on_line(const char *line, uint32_t now_ms);
 
