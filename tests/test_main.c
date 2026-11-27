@@ -6,6 +6,7 @@
 #include "../src/app/cp_app.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_fail, g_pass;
@@ -266,6 +267,50 @@ static void test_audio(void)
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
 }
 
+/* Audio must not touch the empty timer: run the same scenario with and
+ * without loud speech and compare occupancy and empty_for_s. */
+static long status_empty_for_s(uint32_t t)
+{
+    cp_app_on_line("STATUS", t);
+    const char *k = strstr(g_last, "\"empty_for_s\":");
+    return k ? strtol(k + 14, NULL, 10) : -1;
+}
+
+static void run_empty_scenario(bool with_audio, long *empty_s, bool *occ_in_hold, bool *occ_after_hold)
+{
+    const cp_platform_t plat = { capture };
+    uint32_t t = 0;
+    cp_app_init(&plat, false, t);
+    for (unsigned i = 0; i < CP_ENTER_FRAMES + 2; i++) cp_app_on_detection(1, t += 200);
+    CHECK(cp_app_occupied());
+    const uint32_t empty_start = t;
+    *occ_in_hold = true;
+    while (t < empty_start + CP_EMPTY_HOLD_MS - 400) {
+        cp_app_on_detection(0, t += 200);
+        if (with_audio) cp_app_on_audio(90, true, t);
+        cp_app_tick(t);
+        if (!cp_app_occupied()) *occ_in_hold = false;
+    }
+    while (t < empty_start + CP_EMPTY_HOLD_MS + 4000) {
+        cp_app_on_detection(0, t += 200);
+        if (with_audio) cp_app_on_audio(90, true, t);
+        cp_app_tick(t);
+    }
+    *occ_after_hold = cp_app_occupied();
+    *empty_s = status_empty_for_s(t);
+}
+
+static void test_audio_never_changes_empty_timer(void)
+{
+    long e0, e1; bool b0, b1, a0, a1;
+    run_empty_scenario(false, &e0, &b0, &a0);
+    run_empty_scenario(true, &e1, &b1, &a1);
+    CHECK(b0 && b1);     /* still occupied inside the hold window */
+    CHECK(!a0 && !a1);   /* released after CP_EMPTY_HOLD_MS, audio or not */
+    CHECK(e0 > 0);       /* timer is running */
+    CHECK(e1 == e0);     /* identical with loud speech */
+}
+
 int main(void)
 {
     test_counter();
@@ -275,6 +320,7 @@ int main(void)
     test_protocol();
     test_app_sim_flow();
     test_audio();
+    test_audio_never_changes_empty_timer();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

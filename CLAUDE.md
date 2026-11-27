@@ -18,7 +18,7 @@ and a local receiver for the data.
 
 ## Commands
 ```bash
-make test                                   # 59 unit tests (ASan+UBSan), must stay green
+make test                                   # 76 checks (ASan+UBSan), must stay green
 ./build/cp_sim --demo --speed 10            # scripted demo
 python3 bridge/receiver.py                  # receiver on http://localhost:8080
 ./build/cp_sim --speed 60 | python3 bridge/cp_bridge.py --url http://localhost:8080/api/sensor

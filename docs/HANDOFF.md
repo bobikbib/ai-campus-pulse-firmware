@@ -30,7 +30,7 @@ absence timer runs → booking is auto-released → someone else can book it.
 
 | Part | Status |
 |------|--------|
-| `src/core`, `src/app`: presence logic, protocol, people counter | **Done, 59 tests pass** (host, ASan/UBSan) |
+| `src/core`, `src/app`: presence logic, protocol, people counter | **Done, 76 checks pass** (host, ASan/UBSan) |
 | `host/sim_main.c`: simulator | Done, same output as the board |
 | `port/pse84/cp_port_pse84.c` + `cp_port.h`: FreeRTOS glue | Written for the Infineon example; **compiles for Cortex-M55 against stub headers only, never built with the real SDK** |
 | `tools/apply_to_example.sh`: patches the Infineon example | **Tested on local copies** of both examples (7 scenarios). Not yet run in Live Lab |
@@ -163,7 +163,7 @@ The board doesn't know about bookings. The 45-minute rule lives on the server.
 ```bash
 git clone https://github.com/bobikbib/ai-campus-pulse-firmware.git
 cd ai-campus-pulse-firmware
-make test        # expect: 59 passed, 0 failed
+make test        # expect: 76 passed, 0 failed
 ```
 On Windows without `make`/`cc` you can skip the host build. The board build happens
 in Live Lab anyway. `gh` may not be installed. Pushing needs the user's GitHub login

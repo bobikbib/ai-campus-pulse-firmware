@@ -17,6 +17,20 @@ let cameraOk = false;
 let lastDetectAt = 0;     // performance.now() of the last successful detection
 let trackEnded = false;   // camera unplugged / revoked
 let stalled = false;      // currently not sending because the camera gives no frames
+let lastAudioAt = 0;      // performance.now() of the last audio buffer from the mic
+const OK_TEXT = 'Работает. Камера включена.';
+const HIDDEN_TEXT = 'вкладка датчика скрыта — данные не отправляются. Держите окно датчика видимым';
+
+// Browsers pause requestAnimationFrame in hidden tabs, so detection stops.
+document.addEventListener('visibilitychange', () => {
+  if (!cameraOk) return;
+  if (document.hidden) setStatus(HIDDEN_TEXT, true);
+  else { stalled = false; setStatus(OK_TEXT); }
+});
+
+$('opendash').addEventListener('click', () => {
+  window.open('/', 'cp-dashboard', 'popup,width=900,height=700');
+});
 
 function setStatus(text, isErr) {
   $('status').textContent = text;
@@ -57,11 +71,11 @@ async function start() {
   try {
     detector = await makeDetector();
   } catch (e) {
-    setStatus('Не удалось загрузить модель камеры. Запускали tools/fetch_models.sh? (' + e.message + ')', true);
+    setStatus('Не удалось загрузить модель камеры. Запускали tools/fetch_models.sh? (' + e.message + ') Выполните его и обновите страницу.', true);
     return;
   }
   cameraOk = true;
-  setStatus('Работает. Камера включена.');
+  setStatus(OK_TEXT);
   detectLoop(detector);
   setInterval(sendFrame, SEND_MS);
   startAudio(); // independent: failure here does not stop the camera
@@ -125,13 +139,14 @@ async function startAudio() {
       baseOptions: { modelAssetPath: '/web/models/yamnet.tflite' }, maxResults: 5,
     });
   } catch (e) {
-    $('micmsg').textContent = 'модель голоса не загрузилась, шум измеряется (' + e.message + ')';
+    $('micmsg').textContent = 'модель голоса не загрузилась — шум и голос не передаются (' + e.message + ')';
     state.voice = null;
   }
 
   let buf = [], buffered = 0;
   proc.onaudioprocess = (ev) => {
     const data = new Float32Array(ev.inputBuffer.getChannelData(0)); // copy
+    lastAudioAt = performance.now();
     state.noise_db = noiseDb(data);
     if (!classifier) return;
     buf.push(data); buffered += data.length;
@@ -164,14 +179,27 @@ let failures = 0;
 async function sendFrame() {
   // Never send a stale people count: if detection stopped, send nothing
   // (the server then marks the sensor stale) and resume automatically.
-  if (trackEnded || performance.now() - lastDetectAt > 1000) {
+  if (document.hidden) { stalled = true; setStatus(HIDDEN_TEXT, true); return; }
+  if (trackEnded) {
+    stalled = true;
+    setStatus('камера отключилась — данные не отправляются. Обновите страницу и нажмите Старт', true);
+    return;
+  }
+  if (performance.now() - lastDetectAt > 1000) {
     stalled = true;
     setStatus('камера не даёт кадров — данные не отправляются', true);
     return;
   }
-  if (stalled) { stalled = false; setStatus('Работает. Камера включена.'); }
+  if (stalled) { stalled = false; setStatus(OK_TEXT); }
   const frame = { room: $('room').value.trim(), people: state.people,
                   noise_db: state.noise_db, voice: state.voice };
+  // Microphone started but stopped delivering samples: report no data, not the last value.
+  if (frame.noise_db !== null && performance.now() - lastAudioAt > 2000) {
+    frame.noise_db = null; frame.voice = null;
+    $('micmsg').textContent = 'микрофон не даёт данных';
+  } else if ($('micmsg').textContent === 'микрофон не даёт данных') {
+    $('micmsg').textContent = '';
+  }
   $('people').textContent = frame.people;
   $('noise').textContent = frame.noise_db === null ? 'нет' : frame.noise_db;
   $('voice').textContent = frame.voice === null ? 'нет данных' : (frame.voice ? 'речь слышна' : 'тихо');

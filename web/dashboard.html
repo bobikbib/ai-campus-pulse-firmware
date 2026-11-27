@@ -52,6 +52,9 @@ const mmss = (s) => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s
 function card(r) {
   const c = el('div', 'card');
   const ok = r.sensor === 'ok' && r.status !== 'no data';
+  const noise = (r.noise_db == null || !Number.isFinite(r.noise_db)) ? null : r.noise_db;
+  const people = Number.isFinite(r.people_count) ? r.people_count : 0;
+  const emptyFor = Number.isFinite(r.empty_for_s) ? r.empty_for_s : 0;
   const head = el('div', 'head');
   head.append(el('span', 'room', r.room));
   let label, cls;
@@ -62,37 +65,37 @@ function card(r) {
   c.append(head);
 
   if (ok) {
-    c.append(el('div', 'people', r.people_count + ' чел.'));
-    if (r.empty_for_s > 0 && r.empty_for_s < RELEASE_S) {
-      c.append(el('div', 'muted', 'Пусто уже ' + mmss(r.empty_for_s) + ' из 45:00'));
+    c.append(el('div', 'people', people + ' чел.'));
+    if (emptyFor > 0 && emptyFor < RELEASE_S) {
+      c.append(el('div', 'muted', 'Пусто уже ' + mmss(emptyFor) + ' из 45:00'));
       const bar = el('div', 'bar'), fill = el('div');
-      fill.style.width = (100 * r.empty_for_s / RELEASE_S).toFixed(1) + '%';
+      fill.style.width = (100 * emptyFor / RELEASE_S).toFixed(1) + '%';
       bar.append(fill); c.append(bar);
-    } else if (r.empty_for_s >= RELEASE_S) {
+    } else if (emptyFor >= RELEASE_S) {
       c.append(el('div', 'badge', 'бронь была бы снята'));
-      c.append(el('div', 'muted', 'Пусто уже ' + mmss(r.empty_for_s)));
+      c.append(el('div', 'muted', 'Пусто уже ' + mmss(emptyFor)));
     }
   } else {
-    c.append(el('div', 'muted', 'Нет надёжных данных от датчика (' + r.sensor + ')'));
+    c.append(el('div', 'muted', 'Нет надёжных данных от датчика (' + (r.sensor == null ? 'нет данных' : r.sensor) + ')'));
   }
 
   // noise
   const nrow = el('div', 'row');
-  nrow.append(el('span', '', 'Шум'), el('span', '', r.noise_db === null ? 'нет данных' : String(r.noise_db)));
+  nrow.append(el('span', '', 'Шум'), el('span', '', noise == null ? 'нет данных' : String(noise)));
   c.append(nrow);
   const nbar = el('div', 'bar'), nfill = el('div');
-  nfill.style.width = (r.noise_db === null ? 0 : Math.min(100, r.noise_db / 1.2)) + '%';
+  nfill.style.width = (noise == null ? 0 : Math.max(0, Math.min(100, noise / 1.2))) + '%';
   nbar.append(nfill); c.append(nbar);
 
   const vrow = el('div', 'row');
   vrow.append(el('span', '', 'Голос'),
-    el('span', '', r.voice === null ? 'нет данных' : (r.voice ? 'речь слышна' : 'тихо')));
+    el('span', '', r.voice == null ? 'нет данных' : (r.voice ? 'речь слышна' : 'тихо')));
   c.append(vrow);
 
   const srow = el('div', 'row');
-  srow.append(el('span', '', 'Датчик'), el('span', '', r.sensor));
+  srow.append(el('span', '', 'Датчик'), el('span', '', r.sensor == null ? 'нет данных' : String(r.sensor)));
   c.append(srow);
-  c.append(el('div', 'muted', 'обновлено ' + r.last_seen_s + ' с назад'));
+  c.append(el('div', 'muted', 'обновлено ' + (r.last_seen_s == null ? '?' : r.last_seen_s) + ' с назад'));
   return c;
 }
 

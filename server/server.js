@@ -3,8 +3,8 @@
 //   node server/server.js [--port 8080] [--lan]
 // Browser POSTs frames to /api/frame; one cp_cam child per room turns them
 // into presence lines. /api/sensor accepts external presence JSON (receiver.py
-// compatible). Missing binary: /api/frame still answers 200 (the frame is
-// accepted and dropped; the failure is logged to stderr).
+// compatible). Missing binary: /api/frame answers 503 with a build hint.
+// With --lan (0.0.0.0) POSTs are accepted from loopback addresses only.
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,6 +26,12 @@ function defaultBin() {
   return path.join(ROOT, 'build', process.platform === 'win32' ? 'cp_cam.exe' : 'cp_cam');
 }
 
+function isLoopback(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+const NO_BIN_MSG = 'cp_cam не собран: выполните make cam CC=gcc';
+
 function stamp() {
   const d = new Date(), p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
@@ -35,6 +41,14 @@ function startServer({ port = 8080, host = '127.0.0.1', binPath = defaultBin(),
   logPath = path.join(ROOT, 'data', 'readings.jsonl') } = {}) {
   const state = new Map();     // room -> {msg, received}
   const children = new Map();  // room -> {proc, buf}
+  const lanMode = !(host === '127.0.0.1' || host === 'localhost' || host === '::1');
+  let lastNoBinLog = 0;
+  if (!fs.existsSync(binPath)) {
+    console.error('==========================================================');
+    console.error(`ВНИМАНИЕ: ${path.relative(ROOT, binPath) || binPath} не найден — выполните: make cam CC=gcc`);
+    console.error(`WARNING: ${path.relative(ROOT, binPath) || binPath} not found — run: make cam CC=gcc`);
+    console.error('==========================================================');
+  }
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
 
   function store(msg) {
@@ -174,7 +188,17 @@ function startServer({ port = 8080, host = '127.0.0.1', binPath = defaultBin(),
         if (url.startsWith('/web/')) return serveWeb(res, url.slice(5));
         return json(res, 404, { error: 'not found' });
       }
+      if (req.method === 'POST' && lanMode && !isLoopback(req.socket.remoteAddress)) {
+        req.resume();
+        return json(res, 403, { error: 'POST разрешён только с этого компьютера (localhost)' });
+      }
       if (req.method === 'POST' && url === '/api/frame') {
+        if (!fs.existsSync(binPath)) {
+          req.resume();
+          const now = Date.now();
+          if (now - lastNoBinLog > 30000) { lastNoBinLog = now; console.error(NO_BIN_MSG); }
+          return json(res, 503, { error: NO_BIN_MSG });
+        }
         return readBody(req, res, (b) => {
           const err = validFrame(b);
           if (err) return json(res, 400, { error: err });
@@ -240,4 +264,4 @@ if (require.main === module) {
   }, (e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { startServer };
+module.exports = { startServer, isLoopback };

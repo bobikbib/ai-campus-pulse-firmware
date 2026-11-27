@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { startServer } = require('./server.js');
+const { startServer, isLoopback } = require('./server.js');
 
 const ROOT = path.join(__dirname, '..');
 const BIN = path.join(ROOT, 'build', process.platform === 'win32' ? 'cp_cam.exe' : 'cp_cam');
@@ -133,15 +133,33 @@ test('crashed child is respawned on the next frame', () => withServer({}, async 
   assert.ok(pid2 && pid2 !== pid1, 'child was not replaced');
 }));
 
-test('missing binary: frame answers 200 (accepted, nothing stored) and server stays up', () =>
+test('missing binary: frame answers 503 with a build hint, nothing stored, server stays up', () =>
   withServer({ binPath: path.join(os.tmpdir(), 'no-such-cp-cam.exe') }, async (srv) => {
-    const r = await req(srv, 'POST', '/api/frame', { room: 'T-3', people: 1 });
-    assert.ok(r.status === 200 || r.status === 503);
-    await sleep(300);
+    for (let i = 0; i < 3; i++) {
+      const r = await req(srv, 'POST', '/api/frame', { room: 'T-3', people: 1 });
+      assert.strictEqual(r.status, 503);
+      assert.deepStrictEqual(r.json, { error: 'cp_cam не собран: выполните make cam CC=gcc' });
+    }
+    assert.strictEqual(srv.children.size, 0);
     const g = await req(srv, 'GET', '/api/rooms');
     assert.strictEqual(g.status, 200);
     assert.deepStrictEqual(g.json, []);
   }));
+
+test('binary built while the server runs starts working without restart', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-bin-'));
+  const bin = path.join(tmp, path.basename(BIN));
+  return withServer({ binPath: bin }, async (srv) => {
+    assert.strictEqual((await req(srv, 'POST', '/api/frame', { room: 'T-4', people: 1 })).status, 503);
+    fs.copyFileSync(BIN, bin);
+    assert.strictEqual((await req(srv, 'POST', '/api/frame', { room: 'T-4', people: 1 })).status, 200);
+  }).finally(() => { try { fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch (e) { /* exe may still be unloading on Windows */ } });
+});
+
+test('isLoopback accepts only loopback addresses', () => {
+  for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.strictEqual(isLoopback(a), true, a);
+  for (const a of ['192.168.1.5', '::ffff:192.168.1.5', '10.0.0.2', 'fe80::1', '', undefined]) assert.strictEqual(isLoopback(a), false, String(a));
+});
 
 test('POST /api/sensor stores external readings', () => withServer({}, async (srv, logPath) => {
   const msg = { v: 1, type: 'presence', room: 'EXT-1', people_count: 3, occupied: true, empty_for_s: 0, sensor: 'ok', mode: 'camera' };
