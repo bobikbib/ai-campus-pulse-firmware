@@ -1,5 +1,9 @@
 # Changes to `mtb-example-psoc-edge-ml-aihub-deploy-vision`
 
+> **You don't have to apply anything by hand.** `tools/apply_to_example.sh` does it
+> (`--debug` for session 1, no flag for the full integration). Tested on local
+> copies of both examples. This file explains **what** the script changes and why.
+
 These changes are prepared from the example's source code (revision of 2026-10-21).
 They have not been built yet.
 

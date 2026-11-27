@@ -17,6 +17,7 @@
  * It only stores the count in a mailbox; our own task does all cp_app_* work,
  * so cp_app_* is only ever called from one task and needs no locking.
  */
+#include "cp_port.h"
 #include "cp_app.h"
 #include "cp_config.h"
 

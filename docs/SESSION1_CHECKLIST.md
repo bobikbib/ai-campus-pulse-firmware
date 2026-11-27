@@ -58,15 +58,22 @@ make program
 (or the Program button in the IDE, or whatever Live Lab provides for flashing)
 - [ ] Console Output shows `PSOC Edge MCU: AI Hub deploy vision`.
 - [ ] Turn on **Webcam Access** in Live Lab.
-- [ ] **Does the example accept the Live Lab camera?** The example only supports
-      specific cameras (HBVCAM OV7675, Logitech C920/C920e, HBVCAM OS02F10).
-      If the screen shows "camera not supported", that is the most important
-      result of this session (see "Plan B").
+- [ ] **Does the example accept the Live Lab camera?** The example checks the camera
+      against an allow-list of VID/PID codes (Logitech C920/C920e, HBVCAM 0.3MP/2MP).
+      The face-id example, which the Out-of-the-Box demo is built on and which has
+      already worked with the Live Lab camera, uses **the same list**. So the
+      camera will most likely be accepted.
+      In the console, find the `Vendor Id = 0x....` / `Product Id = 0x....` lines
+      and record them. If the camera is rejected, its code can be added to
+      `usb_camera_task.c` / `.h`.
 - [ ] Is the live image visible on the EVK display, with blue masks over people?
 
 ## 6. Check how we read the people count (10 min)
-Apply **patch 1** from `port/pse84/aihub_deploy_vision.patch.md` (debug `printf`),
-then run `make build && make program` again.
+The script inserts the debug `printf` for you (you don't have to type anything):
+```bash
+bash ../ai-campus-pulse-firmware/tools/apply_to_example.sh . --debug
+make build -j8 && make program
+```
 
 | Situation | Expected `people` | Got |
 |-----------|-------------------|-----|
@@ -80,16 +87,23 @@ then run `make build && make program` again.
 
 ## 7. Undo the changes
 ```bash
-git checkout proj_cm55/source/inference_task.c
+git checkout proj_cm55
 ```
 
 ---
 
 ## Plan B (if the example doesn't accept the camera or doesn't build)
 
-1. Try `mtb-example-psoc-edge-ml-face-id`. The Out-of-the-Box demo is built on
-   this one, and it **definitely** works with the Live Lab webcam.
-   Find where it gets the face count (Claude will help in the session).
+1. `mtb-example-psoc-edge-ml-face-id`. The Out-of-the-Box demo is built on it, and it
+   works with the Live Lab camera. The script supports it:
+   ```bash
+   git clone https://github.com/Infineon/mtb-example-psoc-edge-ml-face-id.git
+   cd mtb-example-psoc-edge-ml-face-id && make getlibs
+   bash ../ai-campus-pulse-firmware/tools/apply_to_example.sh .
+   make build -j8 && make program
+   ```
+   Downside: it counts **faces**, so a person who has turned away is not counted.
+   The 10 s hold window smooths this out.
 2. If that fails too: in the demo, show Face ID on the board as "the AI is running
    on the board", and drive the booking logic from the simulator (`cp_sim`).
 
@@ -102,6 +116,7 @@ git checkout proj_cm55/source/inference_task.c
 - git in Developer Workspace: 
 - BSP (EPC2/EPC4): 
 - getlibs / build / program times: 
+- Camera VID/PID (from the log): 
 - Camera accepted by the example: 
 - Count check (step 6): 
 - FPS: 

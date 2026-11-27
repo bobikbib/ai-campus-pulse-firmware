@@ -23,7 +23,12 @@ https://github.com/Infineon/mtb-example-psoc-edge-ml-aihub-deploy-vision
 - The model post-processing is a closed `.a` library. We read the people
   count from its exported variables. Details and the exact code changes are in
   [port/pse84/aihub_deploy_vision.patch.md](../port/pse84/aihub_deploy_vision.patch.md).
-- Plan B: `mtb-example-psoc-edge-ml-face-id`, which the Out-of-the-Box demo uses.
+- Plan B: `mtb-example-psoc-edge-ml-face-id` (the Out-of-the-Box demo is built on it).
+  The count comes from `prediction.count` in the documented public API
+  `ifx_face_id_inference()`. It counts faces, not bodies.
+- Camera: both examples accept a camera from the same VID/PID allow-list,
+  uncompressed YUYV at 320×240.
+- Integration in one command: `tools/apply_to_example.sh <example_dir>`.
 
 ## 2. Add our code
 

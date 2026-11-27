@@ -30,7 +30,8 @@ USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
 | `src/core/presence.c` | Stable `occupied`, `empty_for_s`, camera health (`ok`/`stale`) |
 | `src/core/protocol.c` | JSON-lines output, command parser |
 | `src/app/cp_app.c` | Ties it together; camera **or** simulation mode |
-| `port/pse84/cp_port_pse84.c` | FreeRTOS glue for the board (template) |
+| `port/pse84/cp_port_pse84.c` | FreeRTOS glue for the board (static task, no heap) |
+| `tools/apply_to_example.sh` | Integrates everything into the Infineon example with one command |
 | `host/sim_main.c` | Runs the same core on a laptop |
 | `tests/test_main.c` | Unit tests |
 
