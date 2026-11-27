@@ -68,8 +68,11 @@ void ml_pipeline_task(void *arg)
    extern bool cp_port_start(void);
    if (!cp_port_start()) { CY_ASSERT(0); }
    ```
-4. Build, flash and look for these lines in Console Output:
-   `CP>{"v":1,"type":"hello",...}`, followed by `CP>{..."type":"presence"...}`.
+4. Do **not** enable `CP_ENABLE_MASK_COUNTER` (it costs 128 KB of RAM and the
+   example doesn't need it).
+5. Build, flash and look for these lines in Console Output:
+   `CP>{"v":1,"type":"hello",...}`, followed by `CP>{..."type":"presence"...}`;
+   after 30 s, `CP>{"v":1,"type":"diag","stack_free_bytes":...}`. It should be ≥ 1500.
 
 ## Known noise
 

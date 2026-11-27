@@ -2,7 +2,7 @@
 # The board build is done by ModusToolbox — see docs/INTEGRATION.md.
 
 CC      ?= cc
-CFLAGS  ?= -std=c11 -O2 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion
+CFLAGS  ?= -DCP_ENABLE_MASK_COUNTER=1 -std=c11 -O2 -g -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wno-sign-conversion
 SAN     ?= -fsanitize=address,undefined
 BUILD   := build
 

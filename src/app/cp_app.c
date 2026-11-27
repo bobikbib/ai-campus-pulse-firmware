@@ -18,7 +18,9 @@ static struct {
     bool           pending_change;
 } g;
 
+#if CP_ENABLE_MASK_COUNTER
 static uint16_t g_labels[CP_MASK_MAX_PIXELS];
+#endif
 
 static void emit(const char *line)
 {
@@ -109,6 +111,7 @@ void cp_app_on_detection(uint16_t people, uint32_t now_ms)
     handle_events(cp_presence_on_frame(&g.presence, people, now_ms), now_ms);
 }
 
+#if CP_ENABLE_MASK_COUNTER
 void cp_app_on_mask(const uint8_t *mask, uint16_t width, uint16_t height, uint32_t now_ms)
 {
     if (g.sim) {
@@ -123,6 +126,7 @@ void cp_app_on_mask(const uint8_t *mask, uint16_t width, uint16_t height, uint32
     }
     cp_app_on_detection(r.people, now_ms);
 }
+#endif /* CP_ENABLE_MASK_COUNTER */
 
 void cp_app_on_line(const char *line, uint32_t now_ms)
 {

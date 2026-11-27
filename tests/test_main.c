@@ -200,6 +200,7 @@ static void test_app_sim_flow(void)
     cp_app_on_line("SIM 2", t);
     CHECK(strstr(g_last, "\"type\":\"error\"") != NULL);
 
+#if CP_ENABLE_MASK_COUNTER
     /* Segmentation mask path in CAM mode. */
     static uint8_t mask[32 * 32];
     memset(mask, 0, sizeof mask);
@@ -207,6 +208,7 @@ static void test_app_sim_flow(void)
     for (int i = 0; i < 4; i++) cp_app_on_mask(mask, 32, 32, t += 100);
     CHECK(cp_app_occupied());
     CHECK(cp_app_people() == 1);
+#endif
 }
 
 int main(void)

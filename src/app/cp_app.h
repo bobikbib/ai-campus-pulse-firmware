@@ -14,6 +14,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Mask-based counting (option B below) needs a label buffer of
+ * 2 bytes per mask pixel (256x256 -> 128 KB of RAM). It is OFF by default so
+ * the board build does not pay for it; the YOLACT example already gives a
+ * people count. The host build/tests turn it on. */
+#ifndef CP_ENABLE_MASK_COUNTER
+#define CP_ENABLE_MASK_COUNTER 0
+#endif
+
 #ifndef CP_MASK_MAX_PIXELS
 #define CP_MASK_MAX_PIXELS (256u * 256u)
 #endif
@@ -35,9 +43,11 @@ void cp_app_init(const cp_platform_t *platform, bool start_in_sim, uint32_t now_
  * object-detection or face-detection model: number of boxes). */
 void cp_app_on_detection(uint16_t people, uint32_t now_ms);
 
+#if CP_ENABLE_MASK_COUNTER
 /* Camera path, option B: a person-segmentation mask (0..255 per pixel).
  * Blobs are counted with person_counter. */
 void cp_app_on_mask(const uint8_t *mask, uint16_t width, uint16_t height, uint32_t now_ms);
+#endif
 
 /* One received command line from UART / stdin. */
 void cp_app_on_line(const char *line, uint32_t now_ms);

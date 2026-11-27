@@ -47,6 +47,9 @@ make build -j8
 Leave `CONFIG=Debug` as it is. The README warns that Release does not build with GCC_ARM.
 - [ ] Did it build? Build time: ____
 - [ ] If it failed, copy the first error into Results.
+- [ ] **Memory:** at the end of the build ModusToolbox prints a memory usage table
+      (RAM/flash per region). Take a screenshot: it tells us how much headroom
+      we have for our ~4.3 KB (see `docs/BOARD_BUDGET.md`).
 
 ## 5. Flash and run (5 min)
 ```bash
@@ -94,6 +97,7 @@ git checkout proj_cm55/source/inference_task.c
 
 ## Results (fill in during the session)
 
+- Memory after the example build (free RAM / flash): 
 - ModusToolbox: 
 - git in Developer Workspace: 
 - BSP (EPC2/EPC4): 

@@ -62,6 +62,8 @@ make sim                       # interactive: type SIM 1, SIM 0, STATUS, HELP
 
 ## On the board
 
+Resource budget and board limits: [docs/BOARD_BUDGET.md](docs/BOARD_BUDGET.md).
+
 See [docs/INTEGRATION.md](docs/INTEGRATION.md). Status: the core is tested on the
 host. The board port is a template that has **not been built against the PSOC Edge
 SDK yet**. That's the next step, in Live Lab's Developer Workspace.
