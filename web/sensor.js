@@ -14,6 +14,9 @@ const video = $('video'), canvas = $('overlay'), ctx = canvas.getContext('2d');
 // Latest measurements (null = unavailable).
 const state = { people: 0, noise_db: null, voice: null };
 let cameraOk = false;
+let lastDetectAt = 0;     // performance.now() of the last successful detection
+let trackEnded = false;   // camera unplugged / revoked
+let stalled = false;      // currently not sending because the camera gives no frames
 
 function setStatus(text, isErr) {
   $('status').textContent = text;
@@ -30,6 +33,10 @@ if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
 $('start').addEventListener('click', start);
 
 async function start() {
+  if (!/^[A-Za-z0-9_-]{1,23}$/.test($('room').value.trim())) {
+    setStatus('Неверное имя комнаты: только латинские буквы, цифры, «-» и «_», до 23 символов (например A-101).', true);
+    return;
+  }
   $('start').disabled = true;
   $('room').disabled = true;
   try { localStorage.setItem('cp_room', $('room').value); } catch (e) { /* no storage */ }
@@ -37,6 +44,7 @@ async function start() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
     video.srcObject = stream;
+    stream.getVideoTracks()[0].addEventListener('ended', () => { trackEnded = true; });
     await video.play();
   } catch (e) {
     setStatus('Камера недоступна или доступ запрещён. Данные не отправляются. (' + e.name + ')', true);
@@ -75,6 +83,7 @@ function detectLoop(detector) {
       lastTime = video.currentTime;
       const res = detector.detectForVideo(video, performance.now());
       state.people = res.detections.length;
+      lastDetectAt = performance.now();
       drawBoxes(res.detections);
     }
     requestAnimationFrame(tick);
@@ -153,6 +162,14 @@ function isVoice(results) {
 // ---- sending ----
 let failures = 0;
 async function sendFrame() {
+  // Never send a stale people count: if detection stopped, send nothing
+  // (the server then marks the sensor stale) and resume automatically.
+  if (trackEnded || performance.now() - lastDetectAt > 1000) {
+    stalled = true;
+    setStatus('камера не даёт кадров — данные не отправляются', true);
+    return;
+  }
+  if (stalled) { stalled = false; setStatus('Работает. Камера включена.'); }
   const frame = { room: $('room').value.trim(), people: state.people,
                   noise_db: state.noise_db, voice: state.voice };
   $('people').textContent = frame.people;
@@ -163,7 +180,12 @@ async function sendFrame() {
   try {
     const r = await fetch('/api/frame', { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(frame) });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) {
+      let msg = 'HTTP ' + r.status;
+      try { msg = (await r.json()).error || msg; } catch (e) { /* not JSON */ }
+      $('srvmsg').textContent = 'сервер отклонил данные: ' + msg;
+      return;
+    }
     failures = 0; $('srvmsg').textContent = '';
   } catch (e) {
     if (++failures >= 2) $('srvmsg').textContent = 'сервер не отвечает (повторяю...)';
