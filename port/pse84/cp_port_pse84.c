@@ -1,21 +1,21 @@
 /*
- * PSOC Edge E84 port — glue between an Infineon ModusToolbox vision example
- * and the AI Campus Pulse core.
+ * PSOC Edge E84 port — glue between Infineon's
+ * mtb-example-psoc-edge-ml-aihub-deploy-vision (YOLACT person segmentation,
+ * USB camera) and the AI Campus Pulse core.
  *
- * STATUS: template, NOT yet compiled against the board SDK.
- * It only uses things every ModusToolbox FreeRTOS example already has:
- *   - printf() routed to the debug UART by retarget-io
- *   - FreeRTOS tasks and xTaskGetTickCount()
- * Everything board-specific is marked "TODO(board)" and must be checked
- * against the exact example you start from (see docs/INTEGRATION.md).
+ * STATUS: written against that example's sources (2026-10-21 revision),
+ * NOT yet compiled on the board. See docs/SESSION1_CHECKLIST.md.
  *
- * Build: copy src/core, src/app and this file into the CM55 application of the
- * example, add them to the Makefile SOURCES/INCLUDES, then call the hooks below.
+ * Threading: the example's inference task calls cp_port_on_detections()
+ * once per frame. It only stores the count in a mailbox; our own low-priority
+ * task does all cp_app_* work. So cp_app_* is only ever called from one task
+ * and needs no locking.
  */
 #include "cp_app.h"
 
 #include <stdio.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -24,6 +24,12 @@
 #define CP_TASK_PRIORITY     (tskIDLE_PRIORITY + 1u)
 #define CP_TICK_PERIOD_MS    (50u)
 
+/* Mailbox written by the inference task, read by cp_task.
+ * 32-bit aligned loads/stores are atomic on Cortex-M55. The writer stores
+ * the count first, then bumps the sequence number. */
+static volatile uint32_t s_people;
+static volatile uint32_t s_frame_seq;
+
 static uint32_t cp_now_ms(void)
 {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
@@ -31,53 +37,42 @@ static uint32_t cp_now_ms(void)
 
 static void cp_write_line(const char *line)
 {
-    /* Goes to the KitProg3 UART -> visible in Live Lab "Console Output". */
+    /* Goes to the debug UART -> visible in Live Lab "Console Output". */
     printf("%s\r\n", line);
 }
 
-/* ---------------------------------------------------------------------------
- * Hooks to call from the vision example's inference loop (pick ONE).
- * They must be called from a single task, or protect cp_app_* with a mutex.
- * ------------------------------------------------------------------------ */
-
-/* Object/face detection models: pass the number of "person"/"face" boxes
- * whose score passed the example's own threshold. */
+/* Called from the inference task after every frame. Cheap, never blocks. */
 void cp_port_on_detections(uint16_t num_people)
 {
-    cp_app_on_detection(num_people, cp_now_ms());
-}
-
-/* Person-segmentation model: pass the output mask (0..255 per pixel). */
-void cp_port_on_person_mask(const uint8_t *mask, uint16_t width, uint16_t height)
-{
-    cp_app_on_mask(mask, width, height, cp_now_ms());
-}
-
-/* ---------------------------------------------------------------------------
- * Command input.
- * TODO(board): feed received UART lines here. Simplest option: if the example
- * already reads the console (the OOB demo does: "Enter your choice:"),
- * forward lines that start with "CP " to cp_app_on_line(line + 3, ...).
- * ------------------------------------------------------------------------ */
-void cp_port_on_console_line(const char *line)
-{
-    cp_app_on_line(line, cp_now_ms());
+    s_people = num_people;
+    __asm volatile ("dmb" ::: "memory"); /* count visible before seq */
+    s_frame_seq = s_frame_seq + 1u;
 }
 
 static void cp_task(void *arg)
 {
     (void)arg;
     const cp_platform_t plat = { .write_line = cp_write_line };
-    /* Start in camera mode on the board; "MODE SIM" switches for demos. */
+    uint32_t seen_seq = s_frame_seq;
+
+    /* Camera mode by default on the board. */
     cp_app_init(&plat, false, cp_now_ms());
 
     for (;;) {
+        const uint32_t seq = s_frame_seq;
+        if (seq != seen_seq) {
+            __asm volatile ("dmb" ::: "memory");
+            seen_seq = seq;
+            /* If several frames arrived since the last tick, only the latest
+             * count matters; the debounce counts ticks with new data. */
+            cp_app_on_detection((uint16_t)s_people, cp_now_ms());
+        }
         cp_app_tick(cp_now_ms());
         vTaskDelay(pdMS_TO_TICKS(CP_TICK_PERIOD_MS));
     }
 }
 
-/* Call once from main() of the CM55 app, before vTaskStartScheduler(). */
+/* Call once from main() of proj_cm55, before vTaskStartScheduler(). */
 bool cp_port_start(void)
 {
     return xTaskCreate(cp_task, "campus_pulse", CP_TASK_STACK_WORDS,
