@@ -120,8 +120,9 @@ uptime_s, device_token)`, which takes exactly our CP> fields. `room` = `rooms.bo
 key (env `SUPABASE_KEY`), latest message per room about once a second. Don't send
 extra fields: PostgREST rejects unknown function arguments.
 `bridge/fleet_sim.py` simulates the other rooms. Simulated data drives real bookings,
-see docs/SUPABASE.md. Verified against the real project on 2026-11-28 (older
-room_presence version). The ingest_board version is tested against a local fake.
+see docs/SUPABASE.md. **Verified end to end on the real project, 2026-11-28:**
+cp_sim as Z-3-03 → ingest_board → booking 13 `created` → `warned` at start →
+`released` 1 min later (with `release_after_min` = 1, set back to 45 afterwards).
 
 ## 7. What the website (or receiver) should do with the data
 
