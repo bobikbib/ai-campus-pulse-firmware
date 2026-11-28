@@ -124,6 +124,16 @@ see docs/SUPABASE.md. **Verified end to end on the real project, 2026-11-28:**
 cp_sim as Z-3-03 → ingest_board → booking 13 `created` → `warned` at start →
 `released` 1 min later (with `release_after_min` = 1, set back to 45 afterwards).
 
+## 6c. Audio and NFC (added 2026-11-28)
+
+The user said the board will **not** be available live, so everything is verified on
+the simulator only. Board processes audio (`src/core/audio.c`: noise dB SPL + voice
+heuristic → `noise_db`/`voice` in presence lines) and NFC (`NFC <uid>` command →
+`entry` line, confirmed only if the camera sees someone within 10 s).
+`bridge/board_gateway.py`: phone → board → `rpc/record_nfc_scan` only if confirmed.
+The Android app takes `http://127.0.0.1:8090` via `adb reverse`. Details and what's
+unverified on hardware (PDM mic not wired, UART input in Live Lab): docs/NFC_AUDIO.md.
+
 ## 7. What the website (or receiver) should do with the data
 
 During an active booking:

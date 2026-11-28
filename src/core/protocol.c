@@ -28,6 +28,20 @@ bool cp_room_id_valid(const char *id)
     return true;
 }
 
+bool cp_card_uid_valid(const char *uid)
+{
+    size_t n = 0;
+    if (!uid) {
+        return false;
+    }
+    for (; uid[n]; n++) {
+        if (n >= 20u || !isxdigit((unsigned char)uid[n])) {
+            return false;
+        }
+    }
+    return n >= 4u;
+}
+
 /* Copies the next whitespace-separated token into tok. Returns pointer after it. */
 static const char *next_token(const char *s, char *tok, size_t tok_len)
 {
@@ -148,6 +162,27 @@ void cp_parse_command(const char *line, cp_cmd_t *out)
         } else {
             out->error = "usage: CFG HOLD <ms> | CFG ENTER <1-100>";
         }
+    } else if (ieq(cmd, "NFC")) {
+        if (a2[0] || !cp_card_uid_valid(a1)) {
+            out->error = "usage: NFC <card uid, 4-20 hex chars>";
+            return;
+        }
+        for (size_t i = 0; a1[i] && i + 1 < sizeof out->card; i++) {
+            out->card[i] = (char)toupper((unsigned char)a1[i]);
+        }
+        out->type = CP_CMD_NFC;
+    } else if (ieq(cmd, "NOISE")) {
+        if (a2[0] || !parse_u32(a1, &out->value) || out->value > 120u) {
+            out->error = "usage: NOISE <0-120 dB>";
+            return;
+        }
+        out->type = CP_CMD_NOISE;
+    } else if (ieq(cmd, "VOICE")) {
+        if (a2[0] || !parse_u32(a1, &out->value) || out->value > 1u) {
+            out->error = "usage: VOICE 0|1";
+            return;
+        }
+        out->type = CP_CMD_VOICE;
     } else {
         out->error = "unknown command (try HELP)";
     }
@@ -155,16 +190,38 @@ void cp_parse_command(const char *line, cp_cmd_t *out)
 
 int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m)
 {
-    const int n = snprintf(buf, len,
+    int n = snprintf(buf, len,
         CP_LINE_PREFIX "{\"v\":%d,\"type\":\"presence\",\"room\":\"%s\","
         "\"people_count\":%u,\"occupied\":%s,\"empty_for_s\":%lu,"
         "\"sensor\":\"%s\",\"mode\":\"%s\",\"reason\":\"%s\","
-        "\"uptime_s\":%lu,\"frames\":%lu}",
+        "\"uptime_s\":%lu,\"frames\":%lu",
         CP_PROTOCOL_VERSION, m->room, (unsigned)m->people_count,
         m->occupied ? "true" : "false", (unsigned long)m->empty_for_s,
         m->sensor, m->mode, m->reason,
         (unsigned long)m->uptime_s, (unsigned long)m->frames);
-    return finish(n, len);
+    if (finish(n, len) < 0) {
+        return -1;
+    }
+    const size_t used = (size_t)n;
+    const int k = m->has_audio
+        ? snprintf(buf + used, len - used, ",\"noise_db\":%u,\"voice\":%s}",
+                   (unsigned)m->noise_db, m->voice ? "true" : "false")
+        : snprintf(buf + used, len - used, "}");
+    if (finish(k, len - used) < 0) {
+        return -1;
+    }
+    return n + k;
+}
+
+int cp_format_entry(char *buf, size_t len, const cp_entry_msg_t *m)
+{
+    return finish(snprintf(buf, len,
+        CP_LINE_PREFIX "{\"v\":%d,\"type\":\"entry\",\"room\":\"%s\","
+        "\"card\":\"%s\",\"confirmed\":%s,\"reason\":\"%s\","
+        "\"people_count\":%u,\"wait_ms\":%lu,\"uptime_s\":%lu}",
+        CP_PROTOCOL_VERSION, m->room, m->card, m->confirmed ? "true" : "false",
+        m->reason, (unsigned)m->people_count, (unsigned long)m->wait_ms,
+        (unsigned long)m->uptime_s), len);
 }
 
 int cp_format_ack(char *buf, size_t len, const char *what)

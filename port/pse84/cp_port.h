@@ -14,4 +14,10 @@ bool cp_port_start(void);
  * (aihub: YOLACT instances, face-id: prediction.count). Never blocks. */
 void cp_port_on_detections(uint16_t num_people);
 
+/* Microphone: call with every block of 16 kHz 16-bit mono PCM from the PDM
+ * driver (any block size). Must be called from a task, not from an ISR.
+ * Only two numbers per 100 ms leave this function (level, voice); the samples
+ * are not stored or sent anywhere. Never blocks. */
+void cp_port_on_audio(const int16_t *pcm, uint32_t n);
+
 #endif /* CP_PORT_H */

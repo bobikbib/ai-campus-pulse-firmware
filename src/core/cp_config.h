@@ -51,6 +51,17 @@
 #define CP_MAX_LABELS          256u
 #endif
 
-#define CP_LINE_MAX            256
+/* NFC: after a card scan, the camera must see someone within this time,
+ * otherwise the entry is rejected. */
+#ifndef CP_NFC_CONFIRM_MS
+#define CP_NFC_CONFIRM_MS      10000u
+#endif
+
+/* Voice in the report interval if at least this % of 100 ms windows had speech. */
+#ifndef CP_VOICE_MIN_PERCENT
+#define CP_VOICE_MIN_PERCENT   10u
+#endif
+
+#define CP_LINE_MAX            320
 
 #endif /* CP_CONFIG_H */

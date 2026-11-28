@@ -30,12 +30,12 @@
 
 | Resource | Our cost | Margin |
 |----------|----------|--------|
-| Code (.text) | ~3.3 KB | megabytes of flash, negligible |
-| Constants (.rodata) | ~0.9 KB | negligible |
-| RAM (.bss) | ~4.3 KB, of which 4 KB is our task's static stack | out of ~5 MB SRAM |
+| Code (.text) | ~5.4 KB (incl. audio analyzer, NFC entry, UART command input) | megabytes of flash, negligible |
+| Constants (.rodata) | ~1.3 KB | negligible |
+| RAM (.bss) | ~4.9 KB: 4 KB task stack, audio ring 128 B, analyzer ~50 B, UART line 64 B | out of ~5 MB SRAM |
 | FreeRTOS heap | **0 B** (`xTaskCreateStatic`) | the example's 50 KB is left untouched |
 | Stack | deepest path ≈ 1.8 KB (including libc `snprintf`) out of 4 KB | ~2× margin; the board reports the real number in a `diag` line |
-| CPU | 1 tick per 50 ms, a few hundred instructions; inference hook = 2 stores | well under 0.1% of the M55 |
+| CPU | 1 tick per 50 ms, a few hundred instructions; inference hook = 2 stores; audio: 1 multiply-add per sample + one `log10f` per 100 ms (in the audio task) | well under 1% of the M55 |
 | UART | ~230 B / 5 s + one line per change | < 1% of 115200 baud |
 
 Decisions we made because of the constraints:

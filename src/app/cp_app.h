@@ -49,6 +49,11 @@ void cp_app_on_detection(uint16_t people, uint32_t now_ms);
 void cp_app_on_mask(const uint8_t *mask, uint16_t width, uint16_t height, uint32_t now_ms);
 #endif
 
+/* Microphone: one analyzed window (see core/audio.h), e.g. every 100 ms.
+ * The app averages them over each report interval and adds
+ * "noise_db" / "voice" to the presence line. */
+void cp_app_on_audio_window(float level_spl, bool voice);
+
 /* One received command line from UART / stdin. */
 void cp_app_on_line(const char *line, uint32_t now_ms);
 

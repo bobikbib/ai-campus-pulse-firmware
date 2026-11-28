@@ -44,7 +44,7 @@ import urllib.request
 PREFIX = "CP>"
 FORWARD_FIELDS = (
     "room", "people_count", "occupied", "empty_for_s", "sensor",
-    "mode", "reason", "uptime_s",
+    "mode", "reason", "uptime_s", "noise_db", "voice",
 )
 
 
@@ -187,7 +187,8 @@ class SupabaseSink:
     name = "supabase"
     batch_wait = 1.0
     max_batch = 2000
-    ARGS = ("room", "people_count", "occupied", "empty_for_s", "sensor", "uptime_s")
+    ARGS = ("room", "people_count", "occupied", "empty_for_s", "sensor", "uptime_s",
+            "noise_db", "voice")
 
     def __init__(self, base_url, key, timeout):
         self.base = base_url.rstrip("/") + "/rest/v1"
@@ -225,6 +226,8 @@ class SupabaseSink:
         ok = [m for m, r in zip(latest.values(), results) if r]
         if ok:
             summary = ", ".join(f"{m['room']}={'occ' if m['occupied'] else 'empty'}/{m['empty_for_s']}s"
+                                + (f"/{m['noise_db']}dB{'+voice' if m.get('voice') else ''}"
+                                   if m.get("noise_db") is not None else "")
                                 for m in ok)
             log(f"supabase: {len(ok)} room(s) updated: {summary[:160]}")
 

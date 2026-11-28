@@ -15,6 +15,11 @@
  *   SIM <n>                simulated people count (SIM mode only)
  *   CFG HOLD <ms>          empty-hold window
  *   CFG ENTER <frames>     frames needed to confirm presence
+ *   NFC <uid>              a card was scanned at the door (uid: 4-20 hex chars);
+ *                          the board answers with an "entry" line once the camera
+ *                          confirms someone came in, or rejects it after a timeout
+ *   NOISE <db>             simulated room noise, dB SPL 0-120 (SIM mode only)
+ *   VOICE 0|1              simulated talking on/off (SIM mode only)
  *   HELP
  * Replies: CP>{"v":1,"type":"ack",...} or CP>{"v":1,"type":"error",...}
  */
@@ -35,6 +40,9 @@ typedef enum {
     CP_CMD_SIM,
     CP_CMD_CFG_HOLD,
     CP_CMD_CFG_ENTER,
+    CP_CMD_NFC,
+    CP_CMD_NOISE,
+    CP_CMD_VOICE,
     CP_CMD_HELP
 } cp_cmd_type_t;
 
@@ -43,6 +51,7 @@ typedef struct {
     uint32_t      value;       /* SIM / CFG numeric argument */
     bool          mode_sim;    /* MODE: true=SIM, false=CAM */
     char          room[24];    /* ROOM argument */
+    char          card[24];    /* NFC argument, uppercase hex */
     const char   *error;       /* set when type == CP_CMD_INVALID */
 } cp_cmd_t;
 
@@ -60,12 +69,30 @@ typedef struct {
     uint32_t    empty_for_s;
     uint32_t    uptime_s;
     uint32_t    frames;
+    bool        has_audio;   /* false: no microphone data -> fields omitted */
+    uint8_t     noise_db;    /* dB SPL, 0-120 */
+    bool        voice;
 } cp_status_msg_t;
+
+typedef struct {
+    const char *room;
+    const char *card;
+    bool        confirmed;
+    const char *reason;      /* "person_seen", "nobody_seen", "camera_unavailable", "replaced" */
+    uint16_t    people_count;
+    uint32_t    wait_ms;     /* scan -> decision */
+    uint32_t    uptime_s;
+} cp_entry_msg_t;
 
 /* Format helpers. Return bytes written (excluding NUL), or -1 if truncated. */
 int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m);
 int cp_format_ack(char *buf, size_t len, const char *what);
 int cp_format_error(char *buf, size_t len, const char *what);
+int cp_format_entry(char *buf, size_t len, const cp_entry_msg_t *m);
+
+/* Card UID check: 4-20 hex digits (A-F/a-f/0-9). Separators ':' '-' ' ' are
+ * not accepted here; the gateway normalizes. */
+bool cp_card_uid_valid(const char *uid);
 
 bool cp_room_id_valid(const char *id);
 

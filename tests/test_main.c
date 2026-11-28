@@ -2,8 +2,10 @@
 #include "../src/core/person_counter.h"
 #include "../src/core/presence.h"
 #include "../src/core/protocol.h"
+#include "../src/core/audio.h"
 #include "../src/app/cp_app.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -161,19 +163,116 @@ static void test_protocol(void)
     cp_parse_command("FOO", &c);            CHECK(c.type == CP_CMD_INVALID);
 
     char buf[256];
-    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60 };
+    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false };
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
     CHECK(strncmp(buf, "CP>{", 4) == 0);
     CHECK(strstr(buf, "\"people_count\":2") != NULL);
     CHECK(strstr(buf, "\"occupied\":true") != NULL);
     CHECK(cp_format_status(buf, 20, &m) == -1); /* truncation detected */
+    CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "noise_db") == NULL);
+    m.has_audio = true; m.noise_db = 63; m.voice = true;
+    CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
+    CHECK(strstr(buf, "\"noise_db\":63,\"voice\":true}") != NULL);
+
+    /* NFC / NOISE / VOICE commands */
+    cp_parse_command("NFC 04a1b2c3", &c);   CHECK(c.type == CP_CMD_NFC && strcmp(c.card, "04A1B2C3") == 0);
+    cp_parse_command("NFC 04A1B2C3D4E5F6A7B8C9", &c); CHECK(c.type == CP_CMD_NFC); /* 20 hex */
+    cp_parse_command("NFC 04A1B2C3D4E5F6A7B8C9D", &c); CHECK(c.type == CP_CMD_INVALID); /* 21 */
+    cp_parse_command("NFC 04A", &c);        CHECK(c.type == CP_CMD_INVALID);   /* too short */
+    cp_parse_command("NFC 04:A1:B2:C3", &c); CHECK(c.type == CP_CMD_INVALID);  /* separators */
+    cp_parse_command("NFC 04A1\"B2", &c);   CHECK(c.type == CP_CMD_INVALID);   /* JSON injection */
+    cp_parse_command("NFC", &c);            CHECK(c.type == CP_CMD_INVALID);
+    cp_parse_command("NOISE 65", &c);       CHECK(c.type == CP_CMD_NOISE && c.value == 65);
+    cp_parse_command("NOISE 121", &c);      CHECK(c.type == CP_CMD_INVALID);
+    cp_parse_command("VOICE 1", &c);        CHECK(c.type == CP_CMD_VOICE && c.value == 1);
+    cp_parse_command("VOICE 2", &c);        CHECK(c.type == CP_CMD_INVALID);
+
+    const cp_entry_msg_t e = { "Z-3-03", "04A1B2C3", true, "person_seen", 1, 400, 30 };
+    CHECK(cp_format_entry(buf, sizeof buf, &e) > 0);
+    CHECK(strstr(buf, "\"type\":\"entry\"") && strstr(buf, "\"card\":\"04A1B2C3\"") &&
+          strstr(buf, "\"confirmed\":true"));
+}
+
+/* ---------- audio analyzer ---------- */
+
+static uint32_t g_rng = 1u;
+static double urand(void) /* -1..1 */
+{
+    g_rng = g_rng * 1664525u + 1013904223u;
+    return (double)(g_rng >> 8) / 8388608.0 - 1.0;
+}
+
+/* Feeds `ms` of signal, returns the last window. kind: 0 silence, 1 white
+ * noise at spl, 2 voiced tone (180 Hz + harmonic) at spl over a 40 dB floor. */
+static cp_audio_window_t feed(cp_audio_t *a, int kind, double spl, int ms, int *voice_windows)
+{
+    static double phase;
+    int16_t buf[160];
+    cp_audio_window_t w[2], last = { 0, false };
+    const double amp = 32768.0 * pow(10.0, (spl - 120.0) / 20.0);
+    const double floor_amp = 32768.0 * pow(10.0, (40.0 - 120.0) / 20.0) * 1.732;
+    int total = 16 * ms;
+    *voice_windows = 0;
+    while (total > 0) {
+        for (int i = 0; i < 160; i++) {
+            double x = 0;
+            if (kind == 1) x = urand() * amp * 1.732;
+            if (kind == 2) {
+                x = urand() * floor_amp + amp * 1.155 * (sin(phase) + 0.5 * sin(2 * phase));
+                phase += 2 * 3.14159265358979 * 180.0 / 16000.0;
+            }
+            buf[i] = (int16_t)x;
+        }
+        const size_t k = cp_audio_feed(a, buf, 160, w, 2);
+        for (size_t j = 0; j < k; j++) { last = w[j]; *voice_windows += w[j].voice; }
+        total -= 160;
+    }
+    return last;
+}
+
+static void test_audio(void)
+{
+    cp_audio_cfg_t cfg;
+    cp_audio_t a;
+    cp_audio_window_t w;
+    int vw;
+    cp_audio_default_cfg(&cfg);
+    cp_audio_init(&a, &cfg);
+    CHECK(a.window_samples == 1600u);
+
+    w = feed(&a, 0, 0, 300, &vw);
+    CHECK(w.level_spl == 0.0f && !w.voice);
+
+    w = feed(&a, 1, 50, 500, &vw);           /* quiet room */
+    CHECK(fabsf(w.level_spl - 50.0f) < 1.5f);
+    CHECK(vw == 0);
+    w = feed(&a, 1, 80, 500, &vw);           /* loud hiss: louder, but not speech */
+    CHECK(fabsf(w.level_spl - 80.0f) < 1.5f);
+    CHECK(vw == 0);
+
+    cp_audio_init(&a, &cfg);
+    feed(&a, 1, 40, 500, &vw);               /* learn a 40 dB floor */
+    w = feed(&a, 2, 65, 500, &vw);           /* someone talking */
+    CHECK(w.voice);
+    CHECK(w.level_spl > 60.0f && w.level_spl < 70.0f);
+
+    /* odd block sizes and NULL safety */
+    int16_t one = 1000;
+    CHECK(cp_audio_feed(&a, &one, 1, NULL, 0) == 0);
+    CHECK(cp_audio_feed(NULL, &one, 1, NULL, 0) == 0);
 }
 
 /* ---------- app (end to end, simulated clock) ---------- */
 
-static char g_last[256];
+static char g_last[400];
 static int  g_lines;
-static void capture(const char *l) { strncpy(g_last, l, sizeof g_last - 1); g_lines++; }
+static char g_last_entry[400];
+static void capture(const char *l)
+{
+    strncpy(g_last, l, sizeof g_last - 1);
+    if (strstr(l, "\"type\":\"entry\"")) strncpy(g_last_entry, l, sizeof g_last_entry - 1);
+    g_lines++;
+}
 
 static void test_app_sim_flow(void)
 {
@@ -200,6 +299,34 @@ static void test_app_sim_flow(void)
     cp_app_on_line("SIM 2", t);
     CHECK(strstr(g_last, "\"type\":\"error\"") != NULL);
 
+    /* NFC entry in CAM mode: confirmed only when the camera sees someone. */
+    cp_app_on_line("NFC 04A1B2C3", t);
+    for (int i = 0; i < 5; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    CHECK(strstr(g_last, "\"type\":\"entry\"") == NULL);
+    cp_app_on_detection(1, t += 100);
+    CHECK(strstr(g_last, "\"type\":\"entry\"") && strstr(g_last, "\"confirmed\":true") &&
+          strstr(g_last, "\"card\":\"04A1B2C3\"") && strstr(g_last, "person_seen"));
+
+    /* nobody comes in -> rejected after CP_NFC_CONFIRM_MS */
+    cp_app_on_line("NFC 0A0B0C0D", t);
+    for (int i = 0; i < 99; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    CHECK(strstr(g_last, "\"type\":\"entry\"") == NULL);
+    cp_app_on_detection(0, t += 100); cp_app_tick(t);
+    CHECK(strstr(g_last, "\"confirmed\":false") && strstr(g_last, "nobody_seen"));
+
+    /* a second scan replaces a pending one */
+    cp_app_on_line("NFC 11111111", t);
+    cp_app_on_line("NFC 22222222", t);
+    CHECK(strstr(g_last, "\"type\":\"ack\"") != NULL);
+    cp_app_on_detection(2, t += 100);
+    CHECK(strstr(g_last, "22222222") && strstr(g_last, "\"confirmed\":true"));
+
+    /* camera dead -> rejected as camera_unavailable, never confirmed */
+    cp_app_on_line("NFC 33333333", t);
+    for (int i = 0; i < 110; i++) cp_app_tick(t += 100);
+    CHECK(strstr(g_last_entry, "33333333") && strstr(g_last_entry, "camera_unavailable") &&
+          strstr(g_last_entry, "\"confirmed\":false"));
+
 #if CP_ENABLE_MASK_COUNTER
     /* Segmentation mask path in CAM mode. */
     static uint8_t mask[32 * 32];
@@ -211,6 +338,43 @@ static void test_app_sim_flow(void)
 #endif
 }
 
+static void test_app_audio(void)
+{
+    const cp_platform_t plat = { capture };
+    uint32_t t = 0;
+    cp_app_init(&plat, true, t);
+    /* no microphone data yet in CAM mode -> no audio fields */
+    cp_app_on_line("MODE CAM", t);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "noise_db") == NULL);
+
+    /* board path: analyzer windows reported by the port */
+    for (int i = 0; i < 50; i++) cp_app_on_audio_window(60.0f, i < 10);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"noise_db\":60,\"voice\":true") != NULL);  /* 20% of windows */
+    for (int i = 0; i < 50; i++) cp_app_on_audio_window(60.0f, i < 2);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"voice\":false") != NULL);                 /* 4% */
+    /* energy average, not dB average: one loud window dominates */
+    for (int i = 0; i < 9; i++) cp_app_on_audio_window(40.0f, false);
+    cp_app_on_audio_window(80.0f, false);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"noise_db\":70") != NULL);
+
+    /* SIM mode synthesizes microphone data through the same analyzer */
+    cp_app_on_line("MODE SIM", t);
+    cp_app_on_line("NOISE 50", t);
+    for (int i = 0; i < 60; i++) cp_app_tick(t += 100);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"noise_db\":5") != NULL && strstr(g_last, "\"voice\":false"));
+    cp_app_on_line("VOICE 1", t);
+    for (int i = 0; i < 60; i++) cp_app_tick(t += 100);
+    cp_app_on_line("STATUS", t);
+    CHECK(strstr(g_last, "\"voice\":true") != NULL);
+    cp_app_on_line("NOISE 200", t);
+    CHECK(strstr(g_last, "\"type\":\"error\"") != NULL);
+}
+
 int main(void)
 {
     test_counter();
@@ -219,6 +383,8 @@ int main(void)
     test_wraparound();
     test_protocol();
     test_app_sim_flow();
+    test_audio();
+    test_app_audio();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

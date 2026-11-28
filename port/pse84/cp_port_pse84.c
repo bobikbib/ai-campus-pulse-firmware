@@ -16,10 +16,19 @@
  * Threading: the inference task calls cp_port_on_detections() once per frame.
  * It only stores the count in a mailbox; our own task does all cp_app_* work,
  * so cp_app_* is only ever called from one task and needs no locking.
+ * The audio task calls cp_port_on_audio(); it analyzes the samples itself
+ * (cheap: one pass, no buffering) and queues one small result per 100 ms in a
+ * single-producer/single-consumer ring that our task drains.
+ *
+ * Commands (ROOM, NFC <uid>, ...) arrive on the debug UART RX line. Our task
+ * polls the SCB RX FIFO every tick (PDL calls, no interrupt, nothing shared
+ * with retarget-io's TX path). UNVERIFIED on the board: whether the Live Lab
+ * console can send input at all.
  */
 #include "cp_port.h"
 #include "cp_app.h"
 #include "cp_config.h"
+#include "audio.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -28,6 +37,14 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+
+#ifndef CP_PORT_UART_RX
+#define CP_PORT_UART_RX 1
+#endif
+#if CP_PORT_UART_RX
+#include "cy_pdl.h"
+#include "cybsp.h"   /* CYBSP_DEBUG_UART_HW */
+#endif
 
 #define CP_TASK_STACK_WORDS  (1024u)                     /* 4 KB */
 /* Same level as the example's GFX task (configMAX_PRIORITIES - 5), so time
@@ -45,6 +62,20 @@ static StaticTask_t s_tcb;
  * the count first, then bumps the sequence number. */
 static volatile uint32_t s_people;
 static volatile uint32_t s_frame_seq;
+
+/* Audio results: written by the audio task, read by cp_task. */
+#define CP_AUDIO_RING 16u   /* 1.6 s of windows: plenty for a 50 ms consumer */
+static cp_audio_t        s_audio;
+static bool              s_audio_ready;
+static cp_audio_window_t s_audio_ring[CP_AUDIO_RING];
+static volatile uint32_t s_audio_head;  /* written by producer */
+static volatile uint32_t s_audio_tail;  /* written by consumer */
+
+#if CP_PORT_UART_RX
+static char     s_rx_line[64];
+static uint32_t s_rx_len;
+static bool     s_rx_overflow;
+#endif
 
 static uint32_t cp_now_ms(void)
 {
@@ -100,6 +131,60 @@ void cp_port_on_detections(uint16_t num_people)
     s_frame_seq = s_frame_seq + 1u;
 }
 
+void cp_port_on_audio(const int16_t *pcm, uint32_t n)
+{
+    cp_audio_window_t w[4];
+    if (!s_audio_ready) {
+        cp_audio_cfg_t cfg;
+        cp_audio_default_cfg(&cfg);
+        cp_audio_init(&s_audio, &cfg);
+        s_audio_ready = true;
+    }
+    const size_t k = cp_audio_feed(&s_audio, pcm, n, w, 4);
+    for (size_t i = 0; i < k; i++) {
+        const uint32_t head = s_audio_head;
+        if (head - s_audio_tail >= CP_AUDIO_RING) {
+            break;                              /* consumer behind: drop newest */
+        }
+        s_audio_ring[head % CP_AUDIO_RING] = w[i];
+        __asm volatile ("dmb" ::: "memory");    /* data visible before head */
+        s_audio_head = head + 1u;
+    }
+}
+
+static void cp_drain_audio(void)
+{
+    while (s_audio_tail != s_audio_head) {
+        __asm volatile ("dmb" ::: "memory");
+        const cp_audio_window_t w = s_audio_ring[s_audio_tail % CP_AUDIO_RING];
+        __asm volatile ("dmb" ::: "memory");
+        s_audio_tail = s_audio_tail + 1u;
+        cp_app_on_audio_window(w.level_spl, w.voice);
+    }
+}
+
+#if CP_PORT_UART_RX
+/* Collect command characters from the debug UART; one line -> cp_app_on_line. */
+static void cp_poll_uart(uint32_t now)
+{
+    while (Cy_SCB_UART_GetNumInRxFifo(CYBSP_DEBUG_UART_HW) > 0u) {
+        const char c = (char)Cy_SCB_UART_Get(CYBSP_DEBUG_UART_HW);
+        if (c == '\r' || c == '\n') {
+            if (s_rx_len > 0u && !s_rx_overflow) {
+                s_rx_line[s_rx_len] = '\0';
+                cp_app_on_line(s_rx_line, now);
+            }
+            s_rx_len = 0u;
+            s_rx_overflow = false;
+        } else if (s_rx_len + 1u < sizeof s_rx_line) {
+            s_rx_line[s_rx_len++] = c;
+        } else {
+            s_rx_overflow = true;               /* drop over-long lines */
+        }
+    }
+}
+#endif
+
 static void cp_task(void *arg)
 {
     (void)arg;
@@ -121,6 +206,10 @@ static void cp_task(void *arg)
              * count matters; debounce counts ticks that carried new data. */
             cp_app_on_detection((uint16_t)s_people, now);
         }
+        cp_drain_audio();
+#if CP_PORT_UART_RX
+        cp_poll_uart(now);
+#endif
         cp_app_tick(now);
 
         /* First diag after 30 s (stack has seen every code path by then),
