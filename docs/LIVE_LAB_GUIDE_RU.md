@@ -152,8 +152,9 @@ cd mtb-example-psoc-edge-ml-aihub-deploy-vision
 git checkout proj_cm55
 ```
 ```bash
-bash ../ai-campus-pulse-firmware/tools/apply_to_example.sh .
+bash ../ai-campus-pulse-firmware/tools/apply_to_example.sh . --room Z-3-04a
 ```
+`--room` это `board_key` комнаты из таблицы `rooms` в Supabase: плата будет «стоять» в этой комнате.
 ✅ Скрипт пишет `copied sources...`, `patched...`, `done`.
 ❌ `ERROR: anchor ... not found` → покажите Claude текст ошибки.
 
@@ -188,6 +189,9 @@ make build -j8 && make program
 python3 bridge/receiver.py
 ```
 Данные будут видны на **http://localhost:8080** и сохранятся в `data/readings.jsonl`.
+
+Чтобы данные шли в **Supabase** (и плата, и симуляция остальных комнат), смотрите
+[SUPABASE.md](SUPABASE.md).
 
 ---
 

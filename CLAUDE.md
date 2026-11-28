@@ -22,7 +22,9 @@ make test                                   # 59 unit tests (ASan+UBSan), must s
 ./build/cp_sim --demo --speed 10            # scripted demo
 python3 bridge/receiver.py                  # receiver on http://localhost:8080
 ./build/cp_sim --speed 60 | python3 bridge/cp_bridge.py --url http://localhost:8080/api/sensor
-bash tools/apply_to_example.sh <infineon_example_dir> [--debug]   # patch the Infineon example
+bash tools/apply_to_example.sh <infineon_example_dir> [--room Z-3-04a] [--debug]   # patch the Infineon example
+python3 bridge/fleet_sim.py --supabase $SUPABASE_URL --exclude Z-3-04a --speed 60 | python3 bridge/cp_bridge.py --supabase $SUPABASE_URL
+                                            # all rooms -> Supabase (docs/SUPABASE.md; key in env SUPABASE_KEY)
 ```
 No dependencies beyond a C compiler, make and python3 (stdlib only).
 

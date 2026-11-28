@@ -3,7 +3,7 @@
 # Applies AI Campus Pulse to an Infineon PSOC Edge example. Run it in the
 # Live Lab terminal.
 #
-#   tools/apply_to_example.sh <example_dir> [--debug]
+#   tools/apply_to_example.sh <example_dir> [--room <board_key>] [--debug]
 #
 # Supports (auto-detected):
 #   mtb-example-psoc-edge-ml-aihub-deploy-vision   (plan A, YOLACT people)
@@ -11,6 +11,8 @@
 #
 # --debug  (aihub only) adds just a printf of the people count and doesn't copy
 #          our code. This is for session 1, to verify the count.
+# --room   the room this board reports, i.e. rooms.board_key in Supabase
+#          (e.g. Z-3-04a). Default: ROOM-101. Letters, digits, - and _ only.
 #
 # Safe to run again: files already patched (marker AI_CAMPUS_PULSE) are skipped.
 # To undo:  cd <example_dir> && git checkout . && rm -rf proj_cm55/campus_pulse
@@ -26,10 +28,24 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
-[ $# -ge 1 ] || die "usage: $0 <example_dir> [--debug]"
+USAGE="usage: $0 <example_dir> [--room <board_key>] [--debug]"
+[ $# -ge 1 ] || die "$USAGE"
 EX="$(cd "$1" && pwd)" || die "no such directory: $1"
+shift
 DEBUG=0
-[ "${2:-}" = "--debug" ] && DEBUG=1
+ROOM=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --debug) DEBUG=1 ;;
+        --room)  [ $# -ge 2 ] || die "$USAGE"; ROOM="$2"; shift ;;
+        *)       die "$USAGE" ;;
+    esac
+    shift
+done
+if [ -n "$ROOM" ]; then
+    printf '%s' "$ROOM" | grep -qE '^[A-Za-z0-9_-]{1,24}$' \
+        || die "--room must be 1-24 letters, digits, - or _ (got '$ROOM')"
+fi
 
 # ---------------------------------------------------------------------------
 # Detect which example this is
@@ -123,6 +139,14 @@ cp "$HERE"/src/core/*.c "$HERE"/src/core/*.h "$DST/core/"
 cp "$HERE"/src/app/*.c  "$HERE"/src/app/*.h  "$DST/app/"
 cp "$HERE"/port/pse84/cp_port.h "$HERE"/port/pse84/cp_port_pse84.c "$DST/port/"
 info "copied sources to ${DST#$EX/}"
+if [ -n "$ROOM" ]; then
+    awk -v room="$ROOM" '
+        /^#define CP_DEFAULT_ROOM_ID/ { sub(/"[^"]*"/, "\"" room "\"") }
+        { print }' "$DST/core/cp_config.h" > "$DST/core/cp_config.h.tmp"
+    mv "$DST/core/cp_config.h.tmp" "$DST/core/cp_config.h"
+    grep -q "CP_DEFAULT_ROOM_ID *\"$ROOM\"" "$DST/core/cp_config.h" || die "failed to set room"
+    info "room: $ROOM"
+fi
 
 # Hook in the inference loop
 if [ "$KIND" = aihub ]; then

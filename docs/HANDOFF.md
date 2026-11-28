@@ -109,6 +109,19 @@ Options (pick with the user, ideally after seeing our firmware print `CP>` lines
 Console Output probably keeps only a limited scrollback. Dedupe by line content
 plus `uptime_s`, not by position.
 
+## 6b. Supabase (added 2026-11-28)
+
+The team's Supabase project has a `rooms` table (`id` like `Z.3.04a`, `board_key`
+like `Z-3-04a`, `capacity`, `bookable`, ...) and `bookings` (`room_id` text, ...).
+`supabase/001_room_presence.sql` adds `room_presence`, `presence_log` and the view
+`room_status` (the user runs it in the SQL Editor). The bridge's `--supabase` maps
+board_key → rooms.id and upserts in batches. The key is the service_role key, read only
+from the `SUPABASE_KEY` env var. Never ask for it in chat, never commit it.
+`bridge/fleet_sim.py` simulates every other room with `build/cp_sim` (mode "sim").
+The board's room is set at build time: `apply_to_example.sh <ex> --room Z-3-04a`.
+Tested against a local fake PostgREST only, **not yet against the real project**.
+User guide: [SUPABASE.md](SUPABASE.md).
+
 ## 7. What the website (or receiver) should do with the data
 
 During an active booking:

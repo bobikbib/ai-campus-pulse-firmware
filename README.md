@@ -33,6 +33,8 @@ USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
 | `port/pse84/cp_port_pse84.c` | FreeRTOS glue for the board (static task, no heap) |
 | `bridge/cp_bridge.py` | Board → HTTP: forwards `CP>` lines |
 | `bridge/receiver.py` | Receiver: saves data to a file, live page |
+| `bridge/fleet_sim.py` | Simulated sensor for every room (one `cp_sim` per room) |
+| `supabase/001_room_presence.sql` | Supabase tables + `room_status` view ([docs/SUPABASE.md](docs/SUPABASE.md)) |
 | `tools/apply_to_example.sh` | Integrates everything into the Infineon example with one command |
 | `host/sim_main.c` | Runs the same core on a laptop |
 | `tests/test_main.c` | Unit tests |
@@ -53,6 +55,8 @@ make sim                       # interactive: type SIM 1, SIM 0, STATUS, HELP
 ```
 
 ## Where the data goes (bridge + receiver)
+
+To send everything to Supabase instead, see [docs/SUPABASE.md](docs/SUPABASE.md).
 
 ```bash
 # terminal 1: receiver. Saves everything to data/readings.jsonl, page at http://localhost:8080
