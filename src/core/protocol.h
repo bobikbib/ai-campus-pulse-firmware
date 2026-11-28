@@ -72,6 +72,7 @@ typedef struct {
     bool        has_audio;   /* false: no microphone data -> fields omitted */
     uint8_t     noise_db;    /* dB SPL, 0-120 */
     bool        voice;
+    const char *noise_level; /* "too_loud" | "noisy" | "quiet" | "empty" */
 } cp_status_msg_t;
 
 typedef struct {
@@ -89,6 +90,18 @@ int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m);
 int cp_format_ack(char *buf, size_t len, const char *what);
 int cp_format_error(char *buf, size_t len, const char *what);
 int cp_format_entry(char *buf, size_t len, const cp_entry_msg_t *m);
+
+typedef enum {
+    CP_NOISE_EMPTY = 0,   /* quiet, nobody on camera, nobody talking */
+    CP_NOISE_QUIET,
+    CP_NOISE_NOISY,
+    CP_NOISE_TOO_LOUD
+} cp_noise_level_t;
+
+/* Category for one report interval. prev = last category (for hysteresis). */
+cp_noise_level_t cp_noise_classify(uint8_t noise_db, bool voice, bool occupied,
+                                   cp_noise_level_t prev);
+const char *cp_noise_level_str(cp_noise_level_t l);
 
 /* Card UID check: 4-20 hex digits (A-F/a-f/0-9). Separators ':' '-' ' ' are
  * not accepted here; the gateway normalizes. */

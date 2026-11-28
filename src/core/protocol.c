@@ -204,8 +204,9 @@ int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m)
     }
     const size_t used = (size_t)n;
     const int k = m->has_audio
-        ? snprintf(buf + used, len - used, ",\"noise_db\":%u,\"voice\":%s}",
-                   (unsigned)m->noise_db, m->voice ? "true" : "false")
+        ? snprintf(buf + used, len - used, ",\"noise_db\":%u,\"voice\":%s,\"noise_level\":\"%s\"}",
+                   (unsigned)m->noise_db, m->voice ? "true" : "false",
+                   m->noise_level ? m->noise_level : "quiet")
         : snprintf(buf + used, len - used, "}");
     if (finish(k, len - used) < 0) {
         return -1;
@@ -236,4 +237,38 @@ int cp_format_error(char *buf, size_t len, const char *what)
     return finish(snprintf(buf, len,
         CP_LINE_PREFIX "{\"v\":%d,\"type\":\"error\",\"message\":\"%s\"}",
         CP_PROTOCOL_VERSION, what), len);
+}
+
+cp_noise_level_t cp_noise_classify(uint8_t noise_db, bool voice, bool occupied,
+                                   cp_noise_level_t prev)
+{
+    const unsigned db = noise_db;
+    const unsigned h = CP_NOISE_HYSTERESIS_DB;
+    cp_noise_level_t l;
+
+    if (db >= CP_NOISE_LOUD_MIN) {
+        l = CP_NOISE_TOO_LOUD;
+    } else if (prev == CP_NOISE_TOO_LOUD && db + h >= CP_NOISE_LOUD_MIN) {
+        l = CP_NOISE_TOO_LOUD;                 /* not quiet enough to drop yet */
+    } else if (db >= CP_NOISE_QUIET_MAX) {
+        l = CP_NOISE_NOISY;
+    } else if (prev >= CP_NOISE_NOISY && db + h >= CP_NOISE_QUIET_MAX) {
+        l = CP_NOISE_NOISY;
+    } else {
+        l = CP_NOISE_QUIET;
+    }
+    if (l == CP_NOISE_QUIET && !occupied && !voice) {
+        l = CP_NOISE_EMPTY;
+    }
+    return l;
+}
+
+const char *cp_noise_level_str(cp_noise_level_t l)
+{
+    switch (l) {
+    case CP_NOISE_TOO_LOUD: return "too_loud";
+    case CP_NOISE_NOISY:    return "noisy";
+    case CP_NOISE_QUIET:    return "quiet";
+    default:                return "empty";
+    }
 }

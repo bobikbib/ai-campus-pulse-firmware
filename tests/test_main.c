@@ -163,7 +163,7 @@ static void test_protocol(void)
     cp_parse_command("FOO", &c);            CHECK(c.type == CP_CMD_INVALID);
 
     char buf[256];
-    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false };
+    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false, NULL };
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
     CHECK(strncmp(buf, "CP>{", 4) == 0);
     CHECK(strstr(buf, "\"people_count\":2") != NULL);
@@ -172,7 +172,23 @@ static void test_protocol(void)
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "noise_db") == NULL);
     m.has_audio = true; m.noise_db = 63; m.voice = true;
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
-    CHECK(strstr(buf, "\"noise_db\":63,\"voice\":true}") != NULL);
+    CHECK(strstr(buf, "\"noise_db\":63,\"voice\":true,\"noise_level\":\"quiet\"}") != NULL);
+    m.noise_level = "too_loud";
+    CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "\"noise_level\":\"too_loud\"}"));
+
+    /* noise categories: thresholds 50 / 70 dB, 3 dB hysteresis */
+    CHECK(cp_noise_classify(40, false, false, CP_NOISE_EMPTY) == CP_NOISE_EMPTY);
+    CHECK(cp_noise_classify(40, false, true,  CP_NOISE_EMPTY) == CP_NOISE_QUIET);   /* people in the room */
+    CHECK(cp_noise_classify(40, true,  false, CP_NOISE_EMPTY) == CP_NOISE_QUIET);   /* talking, camera sees nobody */
+    CHECK(cp_noise_classify(55, false, true,  CP_NOISE_QUIET) == CP_NOISE_NOISY);
+    CHECK(cp_noise_classify(75, false, true,  CP_NOISE_QUIET) == CP_NOISE_TOO_LOUD);
+    CHECK(cp_noise_classify(68, false, true,  CP_NOISE_TOO_LOUD) == CP_NOISE_TOO_LOUD); /* hysteresis */
+    CHECK(cp_noise_classify(66, false, true,  CP_NOISE_TOO_LOUD) == CP_NOISE_NOISY);
+    CHECK(cp_noise_classify(48, false, true,  CP_NOISE_NOISY) == CP_NOISE_NOISY);       /* hysteresis */
+    CHECK(cp_noise_classify(46, false, true,  CP_NOISE_NOISY) == CP_NOISE_QUIET);
+    CHECK(cp_noise_classify(46, false, false, CP_NOISE_NOISY) == CP_NOISE_EMPTY);
+    CHECK(cp_noise_classify(120, true, true,  CP_NOISE_EMPTY) == CP_NOISE_TOO_LOUD);
+    CHECK(strcmp(cp_noise_level_str(CP_NOISE_NOISY), "noisy") == 0);
 
     /* NFC / NOISE / VOICE commands */
     cp_parse_command("NFC 04a1b2c3", &c);   CHECK(c.type == CP_CMD_NFC && strcmp(c.card, "04A1B2C3") == 0);
@@ -351,7 +367,7 @@ static void test_app_audio(void)
     /* board path: analyzer windows reported by the port */
     for (int i = 0; i < 50; i++) cp_app_on_audio_window(60.0f, i < 10);
     cp_app_on_line("STATUS", t);
-    CHECK(strstr(g_last, "\"noise_db\":60,\"voice\":true") != NULL);  /* 20% of windows */
+    CHECK(strstr(g_last, "\"noise_db\":60,\"voice\":true,\"noise_level\":\"noisy\"") != NULL);  /* 20% of windows */
     for (int i = 0; i < 50; i++) cp_app_on_audio_window(60.0f, i < 2);
     cp_app_on_line("STATUS", t);
     CHECK(strstr(g_last, "\"voice\":false") != NULL);                 /* 4% */
@@ -367,6 +383,7 @@ static void test_app_audio(void)
     for (int i = 0; i < 60; i++) cp_app_tick(t += 100);
     cp_app_on_line("STATUS", t);
     CHECK(strstr(g_last, "\"noise_db\":5") != NULL && strstr(g_last, "\"voice\":false"));
+    CHECK(strstr(g_last, "\"noise_level\":\"noisy\"") != NULL);
     cp_app_on_line("VOICE 1", t);
     for (int i = 0; i < 60; i++) cp_app_tick(t += 100);
     cp_app_on_line("STATUS", t);

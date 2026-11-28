@@ -26,6 +26,21 @@
   в ≥10% окон за интервал, в отчёте `voice: true`.
 - С платы уходят **только эти два числа**. Звук не записывается и не передаётся.
 
+**Уровень шума** (`cp_noise_classify` в `protocol.c`): плата сама выбирает категорию,
+поле `noise_level` в отчёте:
+
+| `noise_level` | Условие | По-русски |
+|---|---|---|
+| `too_loud` | ≥ 70 дБ | слишком шумно |
+| `noisy` | 50–70 дБ | шумно |
+| `quiet` | < 50 дБ, но камера видит людей или кто-то говорит | тихо |
+| `empty` | < 50 дБ, никого на камере, никто не говорит | никого нет |
+
+Обратно в более тихую категорию плата переходит только на 3 дБ ниже порога, чтобы
+значение не прыгало. Пороги задаются в `cp_config.h`: `CP_NOISE_QUIET_MAX`,
+`CP_NOISE_LOUD_MIN`, `CP_NOISE_HYSTERESIS_DB`. В базе это колонка `noise_level`
+в `v_room_status` (миграция `20261128000600_noise_level.sql`).
+
 **NFC** (`cp_app.c`): команда `NFC <uid>` (4–20 hex-символов) ставит скан в ожидание.
 - Камера увидела ≥1 человека за 10 с (`CP_NFC_CONFIRM_MS`): `entry` с `"confirmed":true, "reason":"person_seen"`.
 - Никого: `"confirmed":false, "reason":"nobody_seen"`.
@@ -34,7 +49,7 @@
 
 Новые строки платы:
 ```
-CP>{"v":1,"type":"presence",...,"noise_db":55,"voice":false}
+CP>{"v":1,"type":"presence",...,"noise_db":55,"voice":false,"noise_level":"noisy"}
 CP>{"v":1,"type":"entry","room":"Z-3-03","card":"04A1B2C3","confirmed":true,"reason":"person_seen","people_count":1,"wait_ms":110,"uptime_s":15}
 ```
 

@@ -62,6 +62,23 @@
 #define CP_VOICE_MIN_PERCENT   10u
 #endif
 
+/* Noise level categories, dB SPL averaged over a report interval:
+ *   too_loud >= CP_NOISE_LOUD_MIN
+ *   noisy    >= CP_NOISE_QUIET_MAX
+ *   quiet    below that
+ *   empty    quiet + nobody on camera + no voice
+ * A category is only left again once the level is CP_NOISE_HYSTERESIS_DB past
+ * the threshold, so a room hovering at 50 dB doesn't flip every 5 s. */
+#ifndef CP_NOISE_QUIET_MAX
+#define CP_NOISE_QUIET_MAX     50u
+#endif
+#ifndef CP_NOISE_LOUD_MIN
+#define CP_NOISE_LOUD_MIN      70u
+#endif
+#ifndef CP_NOISE_HYSTERESIS_DB
+#define CP_NOISE_HYSTERESIS_DB 3u
+#endif
+
 #define CP_LINE_MAX            320
 
 #endif /* CP_CONFIG_H */
