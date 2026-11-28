@@ -83,3 +83,13 @@ select
     end                                    as status
 from public.rooms r
 left join public.room_presence p on p.room_id = r.id;
+
+-- Table privileges. Some projects don't grant API roles access to new tables
+-- automatically ("permission denied for table ..." / 42501), so grant explicitly.
+-- service_role (the bridge): read rooms, write the sensor tables.
+grant usage on schema public to service_role, anon, authenticated;
+grant select on public.rooms to service_role;
+grant select, insert, update on public.room_presence to service_role;
+grant select, insert on public.presence_log to service_role;
+-- The website (anon / signed-in users): read-only.
+grant select on public.room_presence, public.presence_log, public.room_status to anon, authenticated;
