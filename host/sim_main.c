@@ -90,6 +90,10 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Unbuffered stdin: select() only sees the file descriptor, so lines
+     * already pulled into a stdio buffer would wait for the next input.
+     * (Two commands piped at once, e.g. "ROOM X\nSIM 2\n", lost the second.) */
+    setvbuf(stdin, NULL, _IONBF, 0);
     clock_gettime(CLOCK_MONOTONIC, &g_t0);
     const cp_platform_t plat = { .write_line = write_line };
     cp_app_init(&plat, true, now_ms());
