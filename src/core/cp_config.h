@@ -95,6 +95,21 @@
 #define CP_NOISE_SCALE_5       70u
 #endif
 
+/* Camera duty cycle. The camera is "active" (every frame analyzed) while
+ * something is happening: people on camera, an NFC scan waiting, voice or a
+ * noise level >= CP_CAM_WAKE_DB. After CP_CAM_HOLD_MS without any of that it
+ * goes "asleep": one frame every CP_CAM_SLEEP_PERIOD_MS, enough for the
+ * 45-minute rule and to notice someone sitting silently. */
+#ifndef CP_CAM_SLEEP_PERIOD_MS
+#define CP_CAM_SLEEP_PERIOD_MS 15000u
+#endif
+#ifndef CP_CAM_HOLD_MS
+#define CP_CAM_HOLD_MS         30000u
+#endif
+#ifndef CP_CAM_WAKE_DB
+#define CP_CAM_WAKE_DB         50u
+#endif
+
 #define CP_LINE_MAX            320
 
 #endif /* CP_CONFIG_H */

@@ -20,4 +20,11 @@ void cp_port_on_detections(uint16_t num_people);
  * are not stored or sent anywhere. Never blocks. */
 void cp_port_on_audio(const int16_t *pcm, uint32_t n);
 
+/* Camera duty cycle: call from the inference loop right after
+ * cp_port_on_detections(). Returns at once while the camera is active; while
+ * it is asleep it blocks (in 50 ms sleeps) until the next sample frame is due
+ * or something wakes the camera (sound, NFC scan). So the camera and the AI
+ * model only run when needed. */
+void cp_port_frame_gate(void);
+
 #endif /* CP_PORT_H */

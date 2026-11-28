@@ -202,6 +202,13 @@ int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m)
     if (finish(n, len) < 0) {
         return -1;
     }
+    if (m->camera) {
+        const int c = snprintf(buf + n, len - (size_t)n, ",\"camera\":\"%s\"", m->camera);
+        if (finish(c, len - (size_t)n) < 0) {
+            return -1;
+        }
+        n += c;
+    }
     const size_t used = (size_t)n;
     const int k = m->has_audio
         ? snprintf(buf + used, len - used,

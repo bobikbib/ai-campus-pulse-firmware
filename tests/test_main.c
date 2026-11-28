@@ -163,7 +163,8 @@ static void test_protocol(void)
     cp_parse_command("FOO", &c);            CHECK(c.type == CP_CMD_INVALID);
 
     char buf[256];
-    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false, NULL, 0 };
+    cp_status_msg_t m = { .room = "A-101", .reason = "change", .mode = "camera", .sensor = "ok",
+                          .people_count = 2, .occupied = true, .empty_for_s = 0, .uptime_s = 12, .frames = 60 };
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
     CHECK(strncmp(buf, "CP>{", 4) == 0);
     CHECK(strstr(buf, "\"people_count\":2") != NULL);
@@ -418,6 +419,60 @@ static void test_app_audio(void)
     CHECK(strstr(g_last, "\"type\":\"error\"") != NULL);
 }
 
+static void test_camera_duty_cycle(void)
+{
+    const cp_platform_t plat = { capture };
+    uint32_t t = 1000;
+    cp_app_init(&plat, false, t);               /* CAM mode: frames come from "the board" */
+    CHECK(cp_app_camera_active());              /* starts awake */
+    CHECK(strstr(g_last, "\"camera\":\"active\"") != NULL);
+
+    /* nothing happens for CP_CAM_HOLD_MS -> asleep */
+    for (int i = 0; i < 310; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    CHECK(!cp_app_camera_active());
+    CHECK(strstr(g_last, "\"camera\":\"asleep\"") != NULL);
+
+    /* asleep: a frame is wanted only once per CP_CAM_SLEEP_PERIOD_MS */
+    int wanted = 0;
+    for (int i = 0; i < 300; i++) {             /* 30 s */
+        t += 100;
+        if (cp_app_camera_frame_wanted(t)) { wanted++; cp_app_on_detection(0, t); }
+        cp_app_tick(t);
+    }
+    CHECK(wanted == 2);
+    CHECK(strstr(g_last, "\"sensor\":\"ok\"") != NULL);   /* slow frames are not a dead camera */
+
+    /* a voice wakes it up */
+    cp_app_on_audio_window(45.0f, true);
+    CHECK(cp_app_camera_active());
+    CHECK(cp_app_camera_frame_wanted(t + 1));
+
+    /* back to sleep, then someone seen on a sample frame wakes it */
+    for (int i = 0; i < 310; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    CHECK(!cp_app_camera_active());
+    while (!cp_app_camera_frame_wanted(t)) cp_app_tick(t += 100);
+    cp_app_on_detection(1, t);
+    CHECK(cp_app_camera_active());
+    for (int i = 0; i < 5; i++) { cp_app_on_detection(1, t += 100); cp_app_tick(t); }
+    CHECK(cp_app_occupied());
+    /* stays awake while the room is occupied, however long */
+    for (int i = 0; i < 600; i++) { cp_app_on_detection(1, t += 100); cp_app_tick(t); }
+    CHECK(cp_app_camera_active());
+
+    /* loud room wakes it; quiet audio doesn't */
+    for (int i = 0; i < 200; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    for (int i = 0; i < 400; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); cp_app_on_audio_window(38.0f, false); }
+    CHECK(!cp_app_camera_active());
+    cp_app_on_audio_window(62.0f, false);
+    CHECK(cp_app_camera_active());
+
+    /* NFC scan wakes it */
+    for (int i = 0; i < 310; i++) { cp_app_on_detection(0, t += 100); cp_app_tick(t); }
+    CHECK(!cp_app_camera_active());
+    cp_app_on_line("NFC 04A1B2C3", t);
+    CHECK(cp_app_camera_active());
+}
+
 int main(void)
 {
     test_counter();
@@ -428,6 +483,7 @@ int main(void)
     test_app_sim_flow();
     test_audio();
     test_app_audio();
+    test_camera_duty_cycle();
     printf("%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

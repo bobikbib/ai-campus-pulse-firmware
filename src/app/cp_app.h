@@ -60,6 +60,12 @@ void cp_app_on_line(const char *line, uint32_t now_ms);
 /* Call every ~50-100 ms from the main loop. */
 void cp_app_tick(uint32_t now_ms);
 
+/* Camera duty cycle (see cp_config.h). True when the next camera frame should
+ * be analyzed now: always while active, once per CP_CAM_SLEEP_PERIOD_MS while
+ * asleep. The board port uses it to pause the inference loop. */
+bool cp_app_camera_frame_wanted(uint32_t now_ms);
+bool cp_app_camera_active(void);
+
 /* Read-only views for tests and on-screen overlays. */
 bool     cp_app_occupied(void);
 uint16_t cp_app_people(void);

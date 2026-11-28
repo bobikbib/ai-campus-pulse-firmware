@@ -62,6 +62,8 @@ static StaticTask_t s_tcb;
  * the count first, then bumps the sequence number. */
 static volatile uint32_t s_people;
 static volatile uint32_t s_frame_seq;
+/* Written by cp_task: may the inference loop analyze the next frame? */
+static volatile uint32_t s_frame_wanted = 1u;
 
 /* Audio results: written by the audio task, read by cp_task. */
 #define CP_AUDIO_RING 16u   /* 1.6 s of windows: plenty for a 50 ms consumer */
@@ -185,6 +187,13 @@ static void cp_poll_uart(uint32_t now)
 }
 #endif
 
+void cp_port_frame_gate(void)
+{
+    while (!s_frame_wanted) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 static void cp_task(void *arg)
 {
     (void)arg;
@@ -211,6 +220,7 @@ static void cp_task(void *arg)
         cp_poll_uart(now);
 #endif
         cp_app_tick(now);
+        s_frame_wanted = cp_app_camera_frame_wanted(cp_now_ms()) ? 1u : 0u;
 
         /* First diag after 30 s (stack has seen every code path by then),
          * then every 10 min. */

@@ -37,6 +37,12 @@ static struct {
     float          sim_phase;        /* voice pitch phase, radians */
     uint32_t       sim_samples;      /* for the syllable envelope */
 
+    /* camera duty cycle */
+    bool           cam_active;
+    uint32_t       cam_last_trigger_ms;
+    uint32_t       cam_next_sample_ms;   /* asleep: when the next frame is due */
+    uint32_t       now_ms;               /* latest time seen, for audio callbacks */
+
     /* NFC: one scan waiting for the camera to confirm */
     bool           nfc_pending;
     char           nfc_card[24];
@@ -67,6 +73,7 @@ static void report(const char *reason, uint32_t now_ms)
         .empty_for_s  = cp_presence_empty_for_s(&g.presence, now_ms),
         .uptime_s     = (now_ms - g.boot_ms) / 1000u,
         .frames       = g.presence.frames_total,
+        .camera       = g.cam_active ? "active" : "asleep",
     };
     if (g.audio_windows > 0u) {
         const float mean = g.audio_energy / (float)g.audio_windows;
@@ -105,6 +112,51 @@ static void error(const char *what)
     char buf[CP_LINE_MAX];
     if (cp_format_error(buf, sizeof buf, what) > 0) {
         emit(buf);
+    }
+}
+
+static void report(const char *reason, uint32_t now_ms);
+
+/* Something is happening in the room: analyze every frame for a while. */
+static void camera_wake(uint32_t now_ms)
+{
+    g.cam_last_trigger_ms = now_ms;
+    if (!g.cam_active) {
+        g.cam_active = true;
+        g.presence.cfg.stale_ms = CP_STALE_MS;
+        report("change", now_ms);
+    }
+}
+
+static void camera_tick(uint32_t now_ms)
+{
+    if (g.presence.occupied || g.nfc_pending) {
+        g.cam_last_trigger_ms = now_ms;      /* people / pending scan keep it awake */
+    }
+    if (g.cam_active && (now_ms - g.cam_last_trigger_ms) >= CP_CAM_HOLD_MS) {
+        g.cam_active = false;
+        g.cam_next_sample_ms = now_ms + CP_CAM_SLEEP_PERIOD_MS;
+        /* frames now come every SLEEP_PERIOD: don't call that a dead sensor */
+        g.presence.cfg.stale_ms = 2u * CP_CAM_SLEEP_PERIOD_MS + CP_STALE_MS;
+        report("change", now_ms);
+    }
+}
+
+bool cp_app_camera_frame_wanted(uint32_t now_ms)
+{
+    return g.cam_active || (int32_t)(now_ms - g.cam_next_sample_ms) >= 0;
+}
+
+bool cp_app_camera_active(void) { return g.cam_active; }
+
+/* Called for every analyzed frame. */
+static void camera_on_frame(uint16_t people, uint32_t now_ms)
+{
+    if (!g.cam_active) {
+        g.cam_next_sample_ms = now_ms + CP_CAM_SLEEP_PERIOD_MS;
+    }
+    if (people > 0u) {
+        camera_wake(now_ms);
     }
 }
 
@@ -237,6 +289,9 @@ void cp_app_init(const cp_platform_t *platform, bool start_in_sim, uint32_t now_
     cp_audio_default_cfg(&acfg);
     cp_audio_init(&g.sim_audio, &acfg);
     g.sim_noise_db = 40u;   /* quiet room */
+    g.cam_active = true;    /* start awake; sleeps after CP_CAM_HOLD_MS of nothing */
+    g.cam_last_trigger_ms = now_ms;
+    g.now_ms = now_ms;
     g.sim_rng = 12345u;
 
     emit("CP>{\"v\":1,\"type\":\"hello\",\"fw\":\"" CP_FW_VERSION "\"}");
@@ -248,12 +303,17 @@ void cp_app_on_detection(uint16_t people, uint32_t now_ms)
     if (g.sim) {
         return; /* camera frames are ignored while simulating */
     }
+    g.now_ms = now_ms;
+    camera_on_frame(people, now_ms);
     handle_events(cp_presence_on_frame(&g.presence, people, now_ms), now_ms);
     nfc_on_frame(now_ms);
 }
 
 void cp_app_on_audio_window(float level_spl, bool voice)
 {
+    if (voice || level_spl >= (float)CP_CAM_WAKE_DB) {
+        camera_wake(g.now_ms);              /* sound in the room: look */
+    }
     g.audio_energy += powf(10.0f, level_spl / 10.0f);
     g.audio_windows++;
     if (voice) {
@@ -327,6 +387,7 @@ void cp_app_on_line(const char *line, uint32_t now_ms)
         g.nfc_card[sizeof g.nfc_card - 1] = '\0';
         g.nfc_pending = true;
         g.nfc_since_ms = now_ms;
+        camera_wake(now_ms);
         ack("NFC");
         break;
     case CP_CMD_NOISE:
@@ -356,16 +417,22 @@ void cp_app_on_line(const char *line, uint32_t now_ms)
 
 void cp_app_tick(uint32_t now_ms)
 {
+    g.now_ms = now_ms;
     if (g.sim && (now_ms - g.last_sim_frame_ms) >= CP_SIM_FRAME_MS) {
         const uint32_t elapsed = now_ms - g.last_sim_frame_ms;
         g.last_sim_frame_ms = now_ms;
-        handle_events(cp_presence_on_frame(&g.presence, g.sim_people, now_ms), now_ms);
-        nfc_on_frame(now_ms);
+        /* the microphone always listens; the camera follows the duty cycle */
         sim_audio_generate(elapsed < 1000u ? elapsed : 1000u);
+        if (cp_app_camera_frame_wanted(now_ms)) {
+            camera_on_frame(g.sim_people, now_ms);
+            handle_events(cp_presence_on_frame(&g.presence, g.sim_people, now_ms), now_ms);
+            nfc_on_frame(now_ms);
+        }
     }
 
     handle_events(cp_presence_tick(&g.presence, now_ms), now_ms);
     nfc_tick(now_ms);
+    camera_tick(now_ms);
 
     if ((now_ms - g.last_report_ms) >= CP_HEARTBEAT_MS) {
         report(g.pending_change ? "change" : "heartbeat", now_ms);

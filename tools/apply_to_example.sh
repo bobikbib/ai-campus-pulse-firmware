@@ -159,6 +159,7 @@ extern int count_idx, start_index, end_index;"
             int cp_people = (count_idx == 0) ? 0 : (end_index - start_index);
             if (cp_people < 0) { cp_people = 0; }
             cp_port_on_detections((uint16_t)cp_people);
+            cp_port_frame_gate();   /* camera asleep: wait for the next sample */
         }"
 else
     insert_after "$HOOK_FILE" '^#include' "" \
@@ -170,7 +171,8 @@ else
              * error never looks like an empty room. */
             if (ifx_result == IFX_FACEID_RSLT_SUCCESS) {
                 cp_port_on_detections((uint16_t)((prediction.count > 0) ? prediction.count : 0));
-            }"
+            }
+            cp_port_frame_gate();   /* camera asleep: wait for the next sample */"
 fi
 
 # Start our task before the scheduler

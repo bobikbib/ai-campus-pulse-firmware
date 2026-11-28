@@ -19,9 +19,9 @@ step() { printf '\n\033[1;36m=== %s ===\033[0m\n\033[0;36m    site should show: 
 
 {
   echo "ROOM $ROOM"; echo "SIM 0"; echo "NOISE 35"; echo "VOICE 0"
-  step "1/6  nobody in the room, 35 dB"        "1/5 Silent, nobody here";        sleep "$STEP"
+  step "1/6  nobody in the room, 35 dB"        "1/5 Silent, nobody here; camera falls asleep after ~30 s";        sleep "$STEP"
   echo "SIM 2"; echo "NOISE 45"
-  step "2/6  two people come in, 45 dB"        "2/5 Quiet, People now 2";        sleep "$STEP"
+  step "2/6  two people come in, 45 dB"        "2/5 Quiet, People now 2; camera wakes on its next 15 s sample";        sleep "$STEP"
   echo "NOISE 42"; echo "VOICE 1"
   step "3/6  they start talking"               "3/5 Moderate + Talking";         sleep "$STEP"
   echo "VOICE 0"; echo "NOISE 65"
@@ -29,8 +29,8 @@ step() { printf '\n\033[1;36m=== %s ===\033[0m\n\033[0;36m    site should show: 
   echo "NOISE 80"
   step "5/6  80 dB"                            "5/5 Too loud";                   sleep "$STEP"
   echo "NOISE 35"; echo "SIM 0"
-  step "6/6  everyone leaves, quiet again"     "1/5 Silent, nobody here";        sleep "$STEP"
+  step "6/6  everyone leaves, quiet again"     "1/5 Silent, nobody here; camera asleep again after ~30 s";        sleep "$STEP"
   step "done" "gateway keeps running for the phone; Ctrl+C to stop"
 } | python3 bridge/board_gateway.py --supabase "$URL" --room "$ROOM" 2>&1 \
   | grep --line-buffered -E "===|site should|noise_level|gateway:" \
-  | sed -u -E 's/.*"room":"([^"]*)","people_count":([0-9]+).*"noise_db":([0-9]+),"voice":([a-z]+),"noise_level":"([a-z_]+)","noise_scale":([0-9]).*/    board -> room \1: people=\2  noise=\3 dB  voice=\4  level=\6\/5 (\5)/'
+  | sed -u -E 's/.*"room":"([^"]*)","people_count":([0-9]+).*"camera":"([a-z]+)","noise_db":([0-9]+),"voice":([a-z]+),"noise_level":"[a-z_]+","noise_scale":([0-9]).*/    board -> room \1: people=\2  camera=\3  noise=\4 dB (\6\/5)  voice=\5/'

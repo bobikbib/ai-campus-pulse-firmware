@@ -69,6 +69,7 @@ typedef struct {
     uint32_t    empty_for_s;
     uint32_t    uptime_s;
     uint32_t    frames;
+    const char *camera;      /* "active" | "asleep" (NULL: field omitted) */
     bool        has_audio;   /* false: no microphone data -> fields omitted */
     uint8_t     noise_db;    /* dB SPL, 0-120 */
     bool        voice;
