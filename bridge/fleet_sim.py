@@ -57,10 +57,12 @@ def rooms_from_supabase(url, key):
     return [(r["board_key"], int(r.get("capacity") or 4)) for r in rows if r.get("board_key")]
 
 
-def pump(proc):
-    """Copy one simulator's output to our stdout, whole lines only."""
+def pump(proc, room):
+    """Copy one simulator's output to our stdout, whole lines only. Lines from
+    before the ROOM command took effect (default room id) are dropped."""
+    tag = f'"room":"{room}"'
     for line in proc.stdout:
-        if line.startswith("CP>"):
+        if line.startswith("CP>") and tag in line:
             with out_lock:
                 sys.stdout.write(line)
                 sys.stdout.flush()
@@ -124,7 +126,7 @@ def main():
         p = subprocess.Popen([SIM, "--speed", str(args.speed)], stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, text=True, bufsize=1)
         procs.append(p)
-        threading.Thread(target=pump, args=(p,), daemon=True).start()
+        threading.Thread(target=pump, args=(p, room), daemon=True).start()
         threading.Thread(target=drive, daemon=True,
                          args=(room, cap, p, args.speed, args.ghost,
                                random.Random(rng.random()), stop)).start()
