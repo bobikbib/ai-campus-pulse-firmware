@@ -14,6 +14,9 @@
  *     (floor tracked per window: drops at once, rises slowly), and
  *   - its zero-crossing rate is low, as for voiced speech (pitch ~80-400 Hz),
  *     unlike hiss / fan / white noise, which cross zero constantly.
+ *     Crossings are counted with hysteresis at twice the background noise
+ *     amplitude, so background noise riding on a voice doesn't add crossings
+ *     (without it, speech in a 55+ dB room was missed).
  * It is not a speech recognizer: it answers "is someone talking here?".
  */
 #ifndef CP_AUDIO_H
@@ -46,6 +49,7 @@ typedef struct {
     uint32_t zero_crossings;
     int      last_sign;       /* -1, 0 (unknown), +1 */
     float    floor_spl;       /* background noise estimate */
+    float    zc_threshold;    /* zero crossings count only past +-this (2x floor RMS) */
     bool     has_floor;
 } cp_audio_t;
 

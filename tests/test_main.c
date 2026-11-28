@@ -233,8 +233,9 @@ static cp_audio_window_t feed(cp_audio_t *a, int kind, double spl, int ms, int *
         for (int i = 0; i < 160; i++) {
             double x = 0;
             if (kind == 1) x = urand() * amp * 1.732;
-            if (kind == 2) {
-                x = urand() * floor_amp + amp * 1.155 * (sin(phase) + 0.5 * sin(2 * phase));
+            if (kind == 2 || kind == 3) {
+                const double fa = kind == 3 ? floor_amp * 31.6 : floor_amp;  /* 3: 65 dB floor */
+                x = urand() * fa + amp * 1.155 * (sin(phase) + 0.5 * sin(2 * phase));
                 phase += 2 * 3.14159265358979 * 180.0 / 16000.0;
             }
             buf[i] = (int16_t)x;
@@ -271,6 +272,14 @@ static void test_audio(void)
     w = feed(&a, 2, 65, 500, &vw);           /* someone talking */
     CHECK(w.voice);
     CHECK(w.level_spl > 60.0f && w.level_spl < 70.0f);
+
+    /* talking in a noisy room: voice 20 dB over a 65 dB background
+     * (regression: background noise used to add zero crossings and hide the voice) */
+    cp_audio_init(&a, &cfg);
+    feed(&a, 1, 65, 500, &vw);               /* learn a 65 dB floor */
+    CHECK(vw == 0);
+    w = feed(&a, 3, 85, 500, &vw);
+    CHECK(vw >= 3);
 
     /* odd block sizes and NULL safety */
     int16_t one = 1000;

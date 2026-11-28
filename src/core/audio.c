@@ -55,6 +55,10 @@ static cp_audio_window_t finish_window(cp_audio_t *a)
         a->floor_spl += a->cfg.floor_rise_db;
     }
 
+    /* Next window counts zero crossings only past twice the floor amplitude. */
+    a->zc_threshold = 2.0f * 32768.0f *
+        powf(10.0f, (a->floor_spl - (float)a->cfg.dbfs_to_spl) / 20.0f);
+
     w.level_spl = spl;
     w.voice = spl >= a->cfg.voice_min_spl &&
               spl >= a->floor_spl + a->cfg.voice_margin_db &&
@@ -76,7 +80,8 @@ size_t cp_audio_feed(cp_audio_t *a, const int16_t *pcm, size_t n,
     for (size_t i = 0; i < n; i++) {
         const int32_t s = pcm[i];
         a->sum_sq += (uint64_t)((int64_t)s * s);
-        const int sign = (s > 0) - (s < 0);
+        const float th = a->zc_threshold;
+        const int sign = ((float)s > th) ? 1 : (((float)s < -th) ? -1 : 0);
         if (sign != 0) {
             if (a->last_sign != 0 && sign != a->last_sign) {
                 a->zero_crossings++;
