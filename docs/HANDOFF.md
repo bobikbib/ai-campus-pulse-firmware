@@ -111,16 +111,17 @@ plus `uptime_s`, not by position.
 
 ## 6b. Supabase (added 2026-11-28)
 
-The team's Supabase project has a `rooms` table (`id` like `Z.3.04a`, `board_key`
-like `Z-3-04a`, `capacity`, `bookable`, ...) and `bookings` (`room_id` text, ...).
-`supabase/001_room_presence.sql` adds `room_presence`, `presence_log` and the view
-`room_status` (the user runs it in the SQL Editor). The bridge's `--supabase` maps
-board_key → rooms.id and upserts in batches. The key is the service_role key, read only
-from the `SUPABASE_KEY` env var. Never ask for it in chat, never commit it.
-`bridge/fleet_sim.py` simulates every other room with `build/cp_sim` (mode "sim").
-The board's room is set at build time: `apply_to_example.sh <ex> --room Z-3-04a`.
-Tested against a local fake PostgREST only, **not yet against the real project**.
-User guide: [SUPABASE.md](SUPABASE.md).
+The teammate's repo `NazariiSliusar/Room_booking_system` (private) owns the Supabase
+database. Its migration `20261128000200_board_format.sql` defines
+`rpc/ingest_board(room, people_count, occupied, empty_for_s, sensor, noise_db, voice,
+uptime_s, device_token)`, which takes exactly our CP> fields. `room` = `rooms.board_key`
+(`Z-3-03`). The database does status (`v_room_status`), history and the 45-min release
+(`run_booking_jobs`). `cp_bridge.py --supabase` calls it with the public anon/publishable
+key (env `SUPABASE_KEY`), latest message per room about once a second. Don't send
+extra fields: PostgREST rejects unknown function arguments.
+`bridge/fleet_sim.py` simulates the other rooms. Simulated data drives real bookings,
+see docs/SUPABASE.md. Verified against the real project on 2026-11-28 (older
+room_presence version). The ingest_board version is tested against a local fake.
 
 ## 7. What the website (or receiver) should do with the data
 

@@ -34,7 +34,6 @@ USB camera ─► AI model (on PSOC Edge) ─► person mask / boxes
 | `bridge/cp_bridge.py` | Board → HTTP: forwards `CP>` lines |
 | `bridge/receiver.py` | Receiver: saves data to a file, live page |
 | `bridge/fleet_sim.py` | Simulated sensor for every room (one `cp_sim` per room) |
-| `supabase/001_room_presence.sql` | Supabase tables + `room_status` view ([docs/SUPABASE.md](docs/SUPABASE.md)) |
 | `tools/apply_to_example.sh` | Integrates everything into the Infineon example with one command |
 | `host/sim_main.c` | Runs the same core on a laptop |
 | `tests/test_main.c` | Unit tests |

@@ -9,7 +9,7 @@ sends each presence message on.
     ./build/cp_sim --speed 60 | python3 bridge/cp_bridge.py --url http://localhost:8080/api/sensor
 
     # all rooms (simulated) -> Supabase; key comes from the environment
-    export SUPABASE_KEY=...        # service_role key, never commit it
+    export SUPABASE_KEY=...        # the anon / publishable key is enough
     python3 bridge/fleet_sim.py --supabase https://<project>.supabase.co | \\
         python3 bridge/cp_bridge.py --supabase https://<project>.supabase.co
 
@@ -24,14 +24,14 @@ Behaviour:
   - Sending happens in background threads, so reading the board never
     blocks. Messages are sent in order. If a destination is down, messages
     wait in a queue (up to 5000) and are retried with backoff.
-  - Supabase: the board's room id is rooms.board_key; it is mapped to
-    rooms.id. Latest state is upserted into room_presence (one row per room);
-    changes (not heartbeats) are also appended to presence_log. Messages are
-    batched about once a second, so a whole simulated campus is a few
-    requests per second.
+  - Supabase: each room's latest message is sent about once a second to the
+    team database function rpc/ingest_board (room = rooms.board_key). The
+    database stores it in room_state, keeps history and releases bookings
+    that stay empty for 45 minutes. The public anon/publishable key is enough.
 """
 import argparse
 import collections
+import concurrent.futures
 import json
 import os
 import sys
@@ -180,63 +180,53 @@ class ReceiverSink:
 
 
 class SupabaseSink:
-    """Supabase REST (PostgREST): room_presence upsert + presence_log insert."""
+    """The team's Supabase database: POST /rest/v1/rpc/ingest_board, one call per
+    room message (see Room_booking_system docs/database.md). The database itself
+    updates room_state, keeps the history and releases ghost bookings.
+    The public anon / publishable key is enough: ingest_board is granted to anon."""
     name = "supabase"
     batch_wait = 1.0
-    max_batch = 500
+    max_batch = 2000
+    ARGS = ("room", "people_count", "occupied", "empty_for_s", "sensor", "uptime_s")
 
     def __init__(self, base_url, key, timeout):
         self.base = base_url.rstrip("/") + "/rest/v1"
         self.headers = supabase_headers(key)
         self.timeout = timeout
-        self.room_by_key = {}
-        self.unknown_logged = set()
-        self.last_refresh = 0.0
+        self.rejected = set()
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
     def load_rooms(self):
         rows = http("GET", f"{self.base}/rooms?select=id,board_key", None,
                     self.headers, self.timeout)
-        self.room_by_key = {r["board_key"]: r["id"] for r in rows if r.get("board_key")}
-        self.last_refresh = time.time()
-        return self.room_by_key
+        return {r["board_key"]: r["id"] for r in rows if r.get("board_key")}
 
-    def room_id(self, board_key):
-        if board_key not in self.room_by_key and time.time() - self.last_refresh > 30:
-            self.load_rooms()  # a room may have been added meanwhile
-        return self.room_by_key.get(board_key)
+    def _ingest(self, msg):
+        body = {k: msg[k] for k in self.ARGS if msg.get(k) is not None}
+        try:
+            http("POST", f"{self.base}/rpc/ingest_board", body, self.headers, self.timeout)
+        except urllib.error.HTTPError as e:
+            if e.code != 400:
+                raise
+            # the database refused this message (e.g. "Unknown room ROOM-101"): don't retry it
+            text = http_error_text(e)
+            if msg["room"] not in self.rejected:
+                self.rejected.add(msg["room"])
+                log(f"supabase: room {msg['room']!r} refused: {text}")
+            return False
+        return True
 
     def send(self, batch):
-        latest = {}   # room_id -> row; Postgres refuses one row twice in an upsert
-        changes = []
+        # ingest_board keeps only the latest state, so send just the newest message per room
+        latest = {}
         for msg in batch:
-            rid = self.room_id(msg["room"])
-            if rid is None:
-                if msg["room"] not in self.unknown_logged:
-                    self.unknown_logged.add(msg["room"])
-                    log(f"supabase: no room with board_key={msg['room']!r}; its messages are skipped. "
-                        f"Set the board's room to one of: {', '.join(sorted(self.room_by_key))}")
-                continue
-            row = {
-                "room_id": rid, "board_key": msg["room"],
-                "people_count": int(msg["people_count"]), "occupied": bool(msg["occupied"]),
-                "empty_for_s": int(msg["empty_for_s"]), "sensor": str(msg["sensor"]),
-                "mode": msg.get("mode"), "uptime_s": msg.get("uptime_s"),
-            }
-            latest[rid] = row
-            if msg.get("reason") != "heartbeat":
-                changes.append({k: row[k] for k in
-                                ("room_id", "people_count", "occupied", "empty_for_s", "sensor", "mode")}
-                               | {"reason": msg.get("reason")})
-        if changes:
-            http("POST", f"{self.base}/presence_log", changes,
-                 {**self.headers, "Prefer": "return=minimal"}, self.timeout)
-        if latest:
-            http("POST", f"{self.base}/room_presence?on_conflict=room_id", list(latest.values()),
-                 {**self.headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
-                 self.timeout)
-            summary = ", ".join(f"{r['board_key']}={'occ' if r['occupied'] else 'empty'}"
-                                f"/{r['empty_for_s']}s" for r in latest.values())
-            log(f"supabase: {len(latest)} room(s), {len(changes)} change(s): {summary[:160]}")
+            latest[msg["room"]] = msg
+        results = list(self.pool.map(self._ingest, latest.values()))  # re-raises network errors
+        ok = [m for m, r in zip(latest.values(), results) if r]
+        if ok:
+            summary = ", ".join(f"{m['room']}={'occ' if m['occupied'] else 'empty'}/{m['empty_for_s']}s"
+                                for m in ok)
+            log(f"supabase: {len(ok)} room(s) updated: {summary[:160]}")
 
 
 def main():
@@ -260,7 +250,7 @@ def main():
     if args.supabase:
         key = os.environ.get("SUPABASE_KEY", "")
         if not key:
-            ap.error("set the SUPABASE_KEY environment variable (Supabase → Project Settings → API keys)")
+            ap.error("set the SUPABASE_KEY environment variable (the anon / publishable key, Project Settings → API keys)")
         sink = SupabaseSink(args.supabase, key, args.timeout)
         try:
             rooms = sink.load_rooms()
