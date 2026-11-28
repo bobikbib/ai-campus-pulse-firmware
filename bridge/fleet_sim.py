@@ -30,7 +30,11 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cp_bridge import http_error_text, supabase_headers  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIM = os.path.join(HERE, "..", "build", "cp_sim")
@@ -44,9 +48,12 @@ def log(msg):
 def rooms_from_supabase(url, key):
     req = urllib.request.Request(
         url.rstrip("/") + "/rest/v1/rooms?select=board_key,capacity&order=board_key",
-        headers={"apikey": key, "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        rows = json.loads(resp.read())
+        headers=supabase_headers(key))
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            rows = json.loads(resp.read())
+    except (urllib.error.URLError, OSError) as e:
+        sys.exit(f"cannot read rooms from Supabase: {http_error_text(e)}")
     return [(r["board_key"], int(r.get("capacity") or 4)) for r in rows if r.get("board_key")]
 
 

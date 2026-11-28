@@ -79,6 +79,26 @@ def http(method, url, body=None, headers=None, timeout=5.0):
     return json.loads(raw) if raw else None
 
 
+def supabase_headers(key):
+    """Legacy keys (anon / service_role) are JWTs and also go in Authorization.
+    New keys (sb_secret_... / sb_publishable_...) go only in the apikey header."""
+    h = {"apikey": key}
+    if key.startswith("eyJ"):
+        h["Authorization"] = f"Bearer {key}"
+    return h
+
+
+def http_error_text(e):
+    """Short readable reason, including Supabase's own message."""
+    text = str(e)
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            text += " " + e.read().decode(errors="replace")[:300]
+        except OSError:
+            pass
+    return text
+
+
 class PermanentError(Exception):
     """The destination rejected this batch for good (e.g. unknown room)."""
 
@@ -128,13 +148,7 @@ class Sender(threading.Thread):
                 self.failed += 1
                 with self.cond:
                     self.inflight = False
-                detail = ""
-                if isinstance(e, urllib.error.HTTPError):
-                    try:
-                        detail = " " + e.read().decode(errors="replace")[:200]
-                    except OSError:
-                        pass
-                log(f"{self.sink.name}: send failed ({e}{detail}); {len(self.queue)} waiting, "
+                log(f"{self.sink.name}: send failed ({http_error_text(e)}); {len(self.queue)} waiting, "
                     f"retry in {backoff:.1f}s")
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 10.0)
@@ -173,7 +187,7 @@ class SupabaseSink:
 
     def __init__(self, base_url, key, timeout):
         self.base = base_url.rstrip("/") + "/rest/v1"
-        self.headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+        self.headers = supabase_headers(key)
         self.timeout = timeout
         self.room_by_key = {}
         self.unknown_logged = set()
@@ -251,7 +265,7 @@ def main():
         try:
             rooms = sink.load_rooms()
         except (urllib.error.URLError, OSError) as e:
-            sys.exit(f"cannot read rooms from Supabase: {e}")
+            sys.exit(f"cannot read rooms from Supabase: {http_error_text(e)}")
         log(f"Supabase: {len(rooms)} rooms with a board_key: {', '.join(sorted(rooms))}")
         senders.append(Sender(sink))
     for s in senders:
