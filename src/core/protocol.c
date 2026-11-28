@@ -204,9 +204,11 @@ int cp_format_status(char *buf, size_t len, const cp_status_msg_t *m)
     }
     const size_t used = (size_t)n;
     const int k = m->has_audio
-        ? snprintf(buf + used, len - used, ",\"noise_db\":%u,\"voice\":%s,\"noise_level\":\"%s\"}",
+        ? snprintf(buf + used, len - used,
+                   ",\"noise_db\":%u,\"voice\":%s,\"noise_level\":\"%s\",\"noise_scale\":%u}",
                    (unsigned)m->noise_db, m->voice ? "true" : "false",
-                   m->noise_level ? m->noise_level : "quiet")
+                   m->noise_level ? m->noise_level : "quiet",
+                   (unsigned)(m->noise_scale ? m->noise_scale : 1u))
         : snprintf(buf + used, len - used, "}");
     if (finish(k, len - used) < 0) {
         return -1;
@@ -271,4 +273,23 @@ const char *cp_noise_level_str(cp_noise_level_t l)
     case CP_NOISE_QUIET:    return "quiet";
     default:                return "empty";
     }
+}
+
+uint8_t cp_noise_scale(uint8_t noise_db, uint8_t prev)
+{
+    static const unsigned lower[6] = { 0u, 0u, CP_NOISE_SCALE_2, CP_NOISE_SCALE_3,
+                                       CP_NOISE_SCALE_4, CP_NOISE_SCALE_5 };
+    const unsigned db = noise_db;
+    uint8_t level = 1u;
+    for (uint8_t k = 5u; k >= 2u; k--) {
+        if (db >= lower[k]) {
+            level = k;
+            break;
+        }
+    }
+    /* hysteresis: stay one step higher while within CP_NOISE_HYSTERESIS_DB of it */
+    if (prev > level && prev <= 5u && db + CP_NOISE_HYSTERESIS_DB >= lower[prev]) {
+        level = prev;
+    }
+    return level;
 }

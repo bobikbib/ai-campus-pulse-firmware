@@ -163,7 +163,7 @@ static void test_protocol(void)
     cp_parse_command("FOO", &c);            CHECK(c.type == CP_CMD_INVALID);
 
     char buf[256];
-    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false, NULL };
+    cp_status_msg_t m = { "A-101", "change", "camera", "ok", 2, true, 0, 12, 60, false, 0, false, NULL, 0 };
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
     CHECK(strncmp(buf, "CP>{", 4) == 0);
     CHECK(strstr(buf, "\"people_count\":2") != NULL);
@@ -172,9 +172,25 @@ static void test_protocol(void)
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "noise_db") == NULL);
     m.has_audio = true; m.noise_db = 63; m.voice = true;
     CHECK(cp_format_status(buf, sizeof buf, &m) > 0);
-    CHECK(strstr(buf, "\"noise_db\":63,\"voice\":true,\"noise_level\":\"quiet\"}") != NULL);
+    CHECK(strstr(buf, "\"noise_db\":63,\"voice\":true,\"noise_level\":\"quiet\",\"noise_scale\":1}") != NULL);
     m.noise_level = "too_loud";
-    CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "\"noise_level\":\"too_loud\"}"));
+    m.noise_scale = 5;
+    CHECK(cp_format_status(buf, sizeof buf, &m) > 0 && strstr(buf, "\"noise_level\":\"too_loud\",\"noise_scale\":5}"));
+
+    /* noise scale 1..5: steps at 40/50/60/70 dB, 3 dB hysteresis going down */
+    CHECK(cp_noise_scale(0, 0) == 1);
+    CHECK(cp_noise_scale(39, 0) == 1);
+    CHECK(cp_noise_scale(40, 0) == 2);
+    CHECK(cp_noise_scale(55, 0) == 3);
+    CHECK(cp_noise_scale(65, 0) == 4);
+    CHECK(cp_noise_scale(70, 0) == 5);
+    CHECK(cp_noise_scale(120, 0) == 5);
+    CHECK(cp_noise_scale(68, 5) == 5);   /* within 3 dB of 70: stays 5 */
+    CHECK(cp_noise_scale(66, 5) == 4);
+    CHECK(cp_noise_scale(48, 3) == 3);
+    CHECK(cp_noise_scale(46, 3) == 2);
+    CHECK(cp_noise_scale(30, 5) == 1);   /* big drop: straight down */
+    CHECK(cp_noise_scale(52, 1) == 3);   /* going up: no delay */
 
     /* noise categories: thresholds 50 / 70 dB, 3 dB hysteresis */
     CHECK(cp_noise_classify(40, false, false, CP_NOISE_EMPTY) == CP_NOISE_EMPTY);
@@ -393,6 +409,7 @@ static void test_app_audio(void)
     cp_app_on_line("STATUS", t);
     CHECK(strstr(g_last, "\"noise_db\":5") != NULL && strstr(g_last, "\"voice\":false"));
     CHECK(strstr(g_last, "\"noise_level\":\"noisy\"") != NULL);
+    CHECK(strstr(g_last, "\"noise_scale\":3") != NULL);   /* ~50 dB */
     cp_app_on_line("VOICE 1", t);
     for (int i = 0; i < 60; i++) cp_app_tick(t += 100);
     cp_app_on_line("STATUS", t);

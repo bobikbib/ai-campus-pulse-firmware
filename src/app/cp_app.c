@@ -29,6 +29,7 @@ static struct {
     uint32_t       audio_windows;
     uint32_t       audio_voice_windows;
     cp_noise_level_t noise_level;
+    uint8_t        noise_scale;
     cp_audio_t     sim_audio;
     uint8_t        sim_noise_db;
     bool           sim_voice;
@@ -78,6 +79,8 @@ static void report(const char *reason, uint32_t now_ms)
         m.voice     = g.audio_voice_windows * 100u >= g.audio_windows * CP_VOICE_MIN_PERCENT;
         g.noise_level = cp_noise_classify(m.noise_db, m.voice, m.occupied, g.noise_level);
         m.noise_level = cp_noise_level_str(g.noise_level);
+        g.noise_scale = cp_noise_scale(m.noise_db, g.noise_scale);
+        m.noise_scale = g.noise_scale;
         g.audio_energy = 0.0f;
         g.audio_windows = 0u;
         g.audio_voice_windows = 0u;

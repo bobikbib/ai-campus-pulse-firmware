@@ -79,6 +79,22 @@
 #define CP_NOISE_HYSTERESIS_DB 3u
 #endif
 
+/* Noise scale 1-5 (dB SPL, report-interval average), lower bound of each step:
+ *   1 silent < 40 <= 2 quiet < 50 <= 3 moderate < 60 <= 4 noisy < 70 <= 5 too loud
+ * Going back down needs CP_NOISE_HYSTERESIS_DB below the step's lower bound. */
+#ifndef CP_NOISE_SCALE_2
+#define CP_NOISE_SCALE_2       40u
+#endif
+#ifndef CP_NOISE_SCALE_3
+#define CP_NOISE_SCALE_3       50u
+#endif
+#ifndef CP_NOISE_SCALE_4
+#define CP_NOISE_SCALE_4       60u
+#endif
+#ifndef CP_NOISE_SCALE_5
+#define CP_NOISE_SCALE_5       70u
+#endif
+
 #define CP_LINE_MAX            320
 
 #endif /* CP_CONFIG_H */

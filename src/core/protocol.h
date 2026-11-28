@@ -73,6 +73,7 @@ typedef struct {
     uint8_t     noise_db;    /* dB SPL, 0-120 */
     bool        voice;
     const char *noise_level; /* "too_loud" | "noisy" | "quiet" | "empty" */
+    uint8_t     noise_scale; /* 1 (silent) .. 5 (too loud) */
 } cp_status_msg_t;
 
 typedef struct {
@@ -102,6 +103,9 @@ typedef enum {
 cp_noise_level_t cp_noise_classify(uint8_t noise_db, bool voice, bool occupied,
                                    cp_noise_level_t prev);
 const char *cp_noise_level_str(cp_noise_level_t l);
+
+/* Noise scale 1..5 (see cp_config.h). prev = last value (0 = none yet). */
+uint8_t cp_noise_scale(uint8_t noise_db, uint8_t prev);
 
 /* Card UID check: 4-20 hex digits (A-F/a-f/0-9). Separators ':' '-' ' ' are
  * not accepted here; the gateway normalizes. */
